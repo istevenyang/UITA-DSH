@@ -1,9 +1,0 @@
-{"seq": 1, "ts": 1795190740.887, "kind": "session_created", "goal": "隐私开关检查", "app": "", "mode": "auto", "max_steps": 30, "case": {"name": "隐私开关检查", "preconditions": [], "parsed": true, "raw": "用例名称：隐私开关检查\n1. 打开应用首页\n   预期：看到首页\n2. 断言「已开启」可见\n   预期：显示已开启", "steps": [{"no": 1, "action": "打开应用首页", "expected": "看到首页", "status": "pending", "detail": "", "evidence": []}, {"no": 2, "action": "断言「已开启」可见", "expected": "显示已开启", "status": "pending", "detail": "", "evidence": []}]}}
-{"seq": 2, "ts": 1795190740.888, "kind": "state", "from": "idle", "to": "preparing", "reason": "harness start"}
-{"seq": 3, "ts": 1795190740.889, "kind": "state", "from": "preparing", "to": "running", "reason": "loop start"}
-{"seq": 4, "ts": 1795190740.889, "kind": "plan", "thought": "", "tool": "task_finish", "args": {"status": "passed", "summary": "done"}, "expect": ""}
-{"seq": 5, "ts": 1795190740.889, "kind": "tool_result", "tool": "task_finish", "args": {"status": "passed", "summary": "done"}, "step_no": 1, "ok": true, "error": "", "data": {"status": "passed", "summary": "done"}, "took_ms": 0, "evidence": []}
-{"seq": 6, "ts": 1795190740.889, "kind": "case_step", "no": 1, "status": "unknown", "action": "打开应用首页", "detail": "会话收尾（failed）：存在未上报结论的用例步骤：1, 2；模型结论：done", "evidence": []}
-{"seq": 7, "ts": 1795190740.889, "kind": "case_step", "no": 2, "status": "unknown", "action": "断言「已开启」可见", "detail": "会话收尾（failed）：存在未上报结论的用例步骤：1, 2；模型结论：done", "evidence": []}
-{"seq": 8, "ts": 1795190740.889, "kind": "conclusion", "state": "failed", "summary": "存在未上报结论的用例步骤：1, 2；模型结论：done", "unknown_count": 0, "case_progress": {"pending": 0, "running": 0, "passed": 0, "failed": 0, "unknown": 2, "skipped": 0, "total": 2}, "model_status": "passed"}
-{"seq": 9, "ts": 1795190740.889, "kind": "state", "from": "running", "to": "failed", "reason": "存在未上报结论的用例步骤：1, 2；模型结论：done"}

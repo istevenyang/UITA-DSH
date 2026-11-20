@@ -1,7 +1,0 @@
-{"seq": 1, "ts": 1795190739.222, "kind": "session_created", "goal": "x", "app": "", "mode": "auto", "max_steps": 30, "case": null}
-{"seq": 2, "ts": 1795190739.223, "kind": "state", "from": "idle", "to": "preparing", "reason": "harness start"}
-{"seq": 3, "ts": 1795190739.223, "kind": "state", "from": "preparing", "to": "running", "reason": "loop start"}
-{"seq": 4, "ts": 1795190739.223, "kind": "plan", "thought": "", "tool": "task_finish", "args": {"status": "failed", "summary": "done"}, "expect": ""}
-{"seq": 5, "ts": 1795190739.223, "kind": "gate_denied", "tool": "task_finish", "reason": "未知工具（可用：['app_prepare', 'assert_exist', 'locate']）"}
-{"seq": 6, "ts": 1795190739.224, "kind": "conclusion", "state": "error", "summary": "规划失败: 剧本已耗尽", "unknown_count": 0, "case_progress": null}
-{"seq": 7, "ts": 1795190739.224, "kind": "state", "from": "running", "to": "error", "reason": "规划失败: 剧本已耗尽"}

@@ -1,7 +1,0 @@
-{"seq": 1, "ts": 1795190741.553, "kind": "session_created", "goal": "看一下", "app": "sample_web", "mode": "auto", "max_steps": 7, "case": null}
-{"seq": 2, "ts": 1795190741.554, "kind": "state", "from": "idle", "to": "preparing", "reason": "harness start"}
-{"seq": 3, "ts": 1795190741.554, "kind": "state", "from": "preparing", "to": "running", "reason": "loop start"}
-{"seq": 4, "ts": 1795190741.555, "kind": "plan", "thought": "", "tool": "task_finish", "args": {"status": "passed", "summary": "done"}, "expect": ""}
-{"seq": 5, "ts": 1795190741.555, "kind": "tool_result", "tool": "task_finish", "args": {"status": "passed", "summary": "done"}, "step_no": null, "ok": true, "error": "", "data": {"status": "passed", "summary": "done"}, "took_ms": 0, "evidence": []}
-{"seq": 6, "ts": 1795190741.555, "kind": "conclusion", "state": "passed", "summary": "done", "unknown_count": 0, "case_progress": null, "model_status": "passed"}
-{"seq": 7, "ts": 1795190741.555, "kind": "state", "from": "running", "to": "passed", "reason": "done"}
