@@ -1,0 +1,10 @@
+name: smoke_search
+app: sample_web
+os: universal
+priority: P0
+tag: smoke
+description: 示例Web首页冒烟检查
+
+step: 检查首页标题与链接存在
+    assert[页面主标题]
+    assert[了解更多链接]

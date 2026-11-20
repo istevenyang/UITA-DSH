@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UITA · DSH 控制台</title>
+<style>
+  :root {
+    --bg:#0f1116; --panel:#171a21; --line:#262b36; --text:#e6e8ee; --dim:#8b93a7;
+    --ok:#3ddc97; --bad:#ff6b6b; --warn:#ffc857; --accent:#5b9dff;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:13px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--text); }
+  header { padding:12px 18px; border-bottom:1px solid var(--line); display:flex; gap:12px;
+           align-items:center; flex-wrap:wrap; background:var(--panel); }
+  header h1 { font-size:15px; margin:0 12px 0 0; font-weight:600; }
+  .grid { display:grid; grid-template-columns: 320px 1fr; height: calc(100vh - 57px); }
+  aside { border-right:1px solid var(--line); overflow:auto; padding:12px; }
+  main { overflow:auto; padding:16px 18px; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+            padding:12px; margin-bottom:12px; }
+  section h2 { margin:0 0 10px; font-size:12px; letter-spacing:.08em; text-transform:uppercase;
+               color:var(--dim); font-weight:600; }
+  label { display:block; color:var(--dim); font-size:12px; margin:8px 0 4px; }
+  input, select, textarea { width:100%; background:#0c0e13; color:var(--text);
+      border:1px solid var(--line); border-radius:6px; padding:7px 9px; font:inherit; }
+  textarea { resize:vertical; min-height:64px; }
+  button { background:#232936; color:var(--text); border:1px solid var(--line);
+           border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#08111f; font-weight:600; }
+  button.ok { background:#173a2c; border-color:#2c6b52; color:var(--ok); }
+  button.bad { background:#3a1a1c; border-color:#6b2c30; color:var(--bad); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .muted { color:var(--dim); font-size:12px; }
+  .sess { border:1px solid var(--line); border-radius:6px; padding:8px 10px; margin-bottom:8px;
+          cursor:pointer; }
+  .sess.active { border-color:var(--accent); background:#141a26; }
+  .pill { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px;
+          border:1px solid var(--line); color:var(--dim); }
+  .pill.running { color:var(--accent); border-color:var(--accent); }
+  .pill.passed { color:var(--ok); border-color:var(--ok); }
+  .pill.failed,.pill.error { color:var(--bad); border-color:var(--bad); }
+  .pill.paused { color:var(--warn); border-color:var(--warn); }
+  .ev { border-left:2px solid var(--line); padding:6px 0 6px 10px; margin-bottom:6px; }
+  .ev .kind { font-size:11px; color:var(--dim); letter-spacing:.04em; }
+  .ev pre { margin:4px 0 0; white-space:pre-wrap; word-break:break-all; font-size:12px;
+            color:#c8cede; background:#0c0e13; border:1px solid var(--line);
+            border-radius:6px; padding:8px; max-height:260px; overflow:auto; }
+  .ev img { max-width:min(100%,520px); border-radius:6px; border:1px solid var(--line);
+            margin-top:6px; display:block; cursor:zoom-in; }
+  .approve { border:1px solid var(--warn); border-radius:6px; padding:10px; margin-bottom:10px;
+             background:#241f11; }
+  .kv { display:grid; grid-template-columns: 96px 1fr; gap:2px 10px; font-size:12px; }
+  .kv div:nth-child(odd) { color:var(--dim); }
+  table.steps { width:100%; border-collapse:collapse; font-size:12px; }
+  table.steps th, table.steps td { border-bottom:1px solid var(--line); padding:6px 8px;
+      text-align:left; vertical-align:top; }
+  table.steps th { color:var(--dim); font-weight:600; font-size:11px; }
+  .badge { padding:1px 7px; border-radius:999px; font-size:11px; border:1px solid var(--line); }
+  .badge.passed { color:var(--ok); border-color:var(--ok); }
+  .badge.failed { color:var(--bad); border-color:var(--bad); }
+  .badge.unknown { color:var(--warn); border-color:var(--warn); }
+  .badge.skipped { color:var(--dim); }
+  .badge.running { color:var(--accent); border-color:var(--accent); }
+  #toast { position:fixed; right:16px; bottom:16px; background:#232936; border:1px solid var(--line);
+           border-radius:8px; padding:10px 14px; max-width:420px; display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>UITA · DSH 控制台</h1>
+  <span class="muted">本地编排 Deterministic Skill Harness：观察 → 定位 → 操作 → 断言</span>
+  <span style="flex:1"></span>
+  <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--dim)">
+    token
+    <input id="token" type="password" style="width:220px" placeholder="X-Uita-Dsh-Token" />
+  </label>
+  <button id="saveToken">保存</button>
+</header>
+
+<div class="grid">
+  <aside>
+    <section id="firstRun" class="approve" style="display:none">
+      <h2>首次使用：先配模型</h2>
+      <div class="muted">控制台需要模型端点与密钥才能编排。填一次并存盘，后续启动自动读取。</div>
+      <button class="primary" id="openSettings" style="margin-top:8px">去配置</button>
+    </section>
+    <section>
+      <details id="settingsBox">
+        <summary style="cursor:pointer;font-weight:600">设置（保存后自动读取）</summary>
+        <label style="margin-top:10px">模型端点（chat/completions 完整地址）</label>
+        <input id="cfgUrl" placeholder="https://host/v1/chat/completions" />
+        <label>密钥（留空表示保持不变）</label>
+        <input id="cfgKey" type="password" placeholder="未设置" />
+        <div class="row">
+          <div style="flex:1">
+            <label>模型</label>
+            <input id="cfgModel" placeholder="default-model" />
+          </div>
+          <div style="width:110px">
+            <label>端口</label>
+            <input id="cfgPort" type="number" min="0" max="65535" value="0" />
+          </div>
+        </div>
+        <div class="row">
+          <div style="flex:1">
+            <label>默认模式</label>
+            <select id="cfgMode">
+              <option value="">沿用启动参数</option>
+              <option value="supervised">supervised</option>
+              <option value="readonly">readonly</option>
+              <option value="auto">auto</option>
+            </select>
+          </div>
+          <div style="width:104px">
+            <label>最大步数</label>
+            <input id="cfgSteps" type="number" min="0" max="200" value="0" />
+          </div>
+          <div style="width:104px">
+            <label>超时(秒)</label>
+            <input id="cfgTimeout" type="number" min="0" max="7200" value="0" />
+          </div>
+        </div>
+        <label>默认应用名（可空）</label>
+        <input id="cfgApp" placeholder="如 sample_web" />
+        <div class="row" style="margin-top:10px;align-items:center">
+          <button class="primary" id="saveSettings">保存配置</button>
+          <button id="reloadSettings">重新读取</button>
+          <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--dim)">
+            <input id="clearKey" type="checkbox" style="width:auto" />清除已存密钥
+          </label>
+        </div>
+        <div id="settingsMeta" class="muted" style="margin-top:8px"></div>
+      </details>
+    </section>
+    <section>
+      <h2>新建会话</h2>
+      <label>文本用例（推荐：逐行写编号步骤，可带「预期：」）</label>
+      <textarea id="caseText" style="min-height:120px" placeholder="用例名称：登录并检查隐私保护开关
+前置条件：应用已安装
+1. 打开应用首页
+   预期：看到首页
+2. 点开设置里的「隐私保护」
+   预期：出现隐私保护页
+3. 断言「已开启」可见
+   预期：显示已开启"></textarea>
+      <label>目标（可留空；只写一句话时用它）</label>
+      <textarea id="goal" placeholder="例：打开应用，点开设置里的「隐私保护」，断言出现「已开启」"></textarea>
+      <label>应用名（可空，缺省由模型 app_prepare 指定）</label>
+      <input id="app" placeholder="如 sample_web / demo_desktop" />
+      <div class="row" style="margin-top:8px">
+        <div style="flex:1">
+          <label>模式</label>
+          <select id="mode">
+            <option value="supervised">supervised（动作需批准）</option>
+            <option value="readonly">readonly（只看不断言）</option>
+            <option value="auto">auto（全自动）</option>
+          </select>
+        </div>
+        <div style="width:96px">
+          <label>最大步数</label>
+          <input id="maxSteps" type="number" value="30" min="1" max="200" />
+        </div>
+      </div>
+      <button class="primary" id="create" style="width:100%;margin-top:10px">启动会话</button>
+    </section>
+    <section>
+      <h2>会话</h2>
+      <div id="sessions" class="muted">暂无会话</div>
+    </section>
+  </aside>
+
+  <main>
+    <section id="detail" style="display:none">
+      <h2>会话详情</h2>
+      <div class="row" style="justify-content:space-between">
+        <div id="meta" class="kv" style="flex:1"></div>
+        <div class="row">
+          <button id="pause" class="ok">暂停</button>
+          <button id="resume">继续</button>
+          <button id="stop" class="bad">中止</button>
+          <button id="copyReport">复制结果</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input id="hint" placeholder="人工插话：给模型的纠偏提示（下一步生效）" style="flex:1" />
+        <button id="sendHint">发送</button>
+      </div>
+    </section>
+
+    <section id="stepsBox" style="display:none">
+      <h2>用例步骤</h2>
+      <div id="steps"></div>
+    </section>
+
+    <section id="irBox" style="display:none">
+      <h2>步骤 IR（可直接改，改完重放）</h2>
+      <div class="row" style="justify-content:space-between">
+        <span id="irRev" class="muted"></span>
+        <div class="row">
+          <button id="irReload">重新读取</button>
+          <button class="primary" id="irSave">保存修改</button>
+          <button class="ok" id="irReplay">重放</button>
+        </div>
+      </div>
+      <textarea id="irJson" style="margin-top:8px;min-height:280px;font-family:monospace;font-size:12px"
+                spellcheck="false"></textarea>
+      <div id="irMsg" class="muted" style="margin-top:6px"></div>
+    </section>
+
+    <section id="approval" class="approve" style="display:none">
+      <div class="row" style="justify-content:space-between">
+        <div><strong>待批准动作</strong> <span id="approvalTool" class="muted"></span></div>
+        <div class="row">
+          <button class="ok" id="approve">批准</button>
+          <button class="bad" id="reject">拒绝</button>
+        </div>
+      </div>
+      <pre id="approvalArgs" style="margin:8px 0 0;white-space:pre-wrap;font-size:12px"></pre>
+    </section>
+
+    <section>
+      <h2>时间线</h2>
+      <div id="timeline" class="muted">选择或新建一个会话</div>
+    </section>
+
+    <section>
+      <h2>工具调试台（不经模型，直接调工具）</h2>
+      <div class="row">
+        <select id="tool" style="flex:1"></select>
+        <button id="callTool">调用</button>
+      </div>
+      <textarea id="toolArgs" style="margin-top:8px" placeholder='{"target": "设置按钮"}'></textarea>
+      <pre id="toolOut" style="margin:8px 0 0;white-space:pre-wrap;font-size:12px"></pre>
+    </section>
+  </main>
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const urlToken = new URLSearchParams(location.search).get('token');
+if (urlToken) localStorage.setItem('dshToken', urlToken.trim());
+const state = { token: localStorage.getItem('dshToken') || '', sessionId: '', lastSeq: 0, timer: null,
+                events: [], tools: [] };
+
+function toast(message) {
+  const el = $('toast');
+  el.textContent = message;
+  el.style.display = 'block';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+async function api(method, path, body) {
+  const headers = { 'X-Uita-Dsh-Token': state.token };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const response = await fetch(path, {
+    method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await response.text();
+  let payload = {};
+  try { payload = text ? JSON.parse(text) : {}; } catch (e) { payload = { error: text }; }
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error || ('HTTP ' + response.status));
+  }
+  return payload;
+}
+
+function pill(value) { return '<span class="pill ' + value + '">' + value + '</span>'; }
+
+async function refreshSessions() {
+  try {
+    const data = await api('GET', '/state');
+    state.tools = data.tools || [];
+    renderTools();
+    const list = (data.sessions || []).slice().reverse();
+    $('sessions').innerHTML = list.length ? list.map((s) => (
+      '<div class="sess' + (s.session_id === state.sessionId ? ' active' : '') +
+      '" data-id="' + s.session_id + '">' +
+      '<div class="row" style="justify-content:space-between">' +
+      '<span>' + pill(s.state) + '</span><span class="muted">' + s.steps_used + '/' + s.max_steps + ' 步</span></div>' +
+      '<div style="margin-top:4px">' + escapeHtml(s.goal.slice(0, 90)) + '</div>' +
+      '<div class="muted">' + escapeHtml((s.app || '-') + ' · ' + s.session_id) + '</div>' +
+      '</div>'
+    )).join('') : '暂无会话';
+    Array.from(document.querySelectorAll('.sess')).forEach((node) => {
+      node.onclick = () => selectSession(node.dataset.id);
+    });
+  } catch (e) { toast('会话列表加载失败: ' + e.message); }
+}
+
+function renderTools() {
+  const select = $('tool');
+  if (select.dataset.ready === String(state.tools.length)) return;
+  select.dataset.ready = String(state.tools.length);
+  select.innerHTML = state.tools.map((t) =>
+    '<option value="' + t.name + '">' + t.tier + ' · ' + t.name + '</option>').join('');
+}
+
+function escapeHtml(text) {
+  return String(text === undefined || text === null ? '' : text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function fillSettings(s) {
+  $('cfgUrl').value = s.llm.url || '';
+  $('cfgModel').value = s.llm.model || '';
+  $('cfgPort').value = s.server.port || 0;
+  $('cfgMode').value = s.server.mode || '';
+  $('cfgSteps').value = s.run.max_steps || 0;
+  $('cfgTimeout').value = s.run.timeout_s || 0;
+  $('cfgApp').value = s.defaults.app || '';
+  $('cfgKey').value = '';
+  $('clearKey').checked = false;
+  $('cfgKey').placeholder = s.llm.api_key_set
+    ? s.llm.api_key_mask + ' 已设置，留空不改' : '未设置';
+  const src = s.sources || {};
+  $('settingsMeta').textContent = '配置文件：' + s.path +
+    (s.error ? ' · ' + s.error : '') +
+    ' · 端点来源 ' + (src['llm.url'] || '-') +
+    ' / 密钥来源 ' + (src['llm.api_key'] || '-');
+  $('firstRun').style.display = s.configured ? 'none' : 'block';
+  if (!s.configured) $('settingsBox').open = true;
+  if (s.server.mode) $('mode').value = s.server.mode;
+  if (s.run.max_steps) $('maxSteps').value = s.run.max_steps;
+  if (s.defaults.app) $('app').value = s.defaults.app;
+}
+
+async function loadSettings() {
+  if (!state.token) return;
+  try {
+    const data = await api('GET', '/settings');
+    fillSettings(data.settings);
+  } catch (e) { toast('配置读取失败: ' + e.message); }
+}
+
+$('openSettings').onclick = () => { $('settingsBox').open = true; };
+$('reloadSettings').onclick = () => { loadSettings(); toast('已重新读取配置'); };
+$('saveSettings').onclick = async () => {
+  const body = {
+    llm: {
+      url: $('cfgUrl').value.trim(),
+      api_key: $('cfgKey').value.trim(),
+      model: $('cfgModel').value.trim(),
+    },
+    server: { port: Number($('cfgPort').value || 0), mode: $('cfgMode').value },
+    run: { max_steps: Number($('cfgSteps').value || 0), timeout_s: Number($('cfgTimeout').value || 0) },
+    defaults: { app: $('cfgApp').value.trim() },
+    clear_api_key: $('clearKey').checked,
+  };
+  try {
+    const data = await api('POST', '/settings', body);
+    fillSettings(data.settings);
+    toast(data.restart_required
+      ? '配置已保存；端口变更需重启控制台才生效'
+      : '配置已保存，后续启动自动读取');
+  } catch (e) { toast('保存失败: ' + e.message); }
+};
+
+async function loadIr() {
+  if (!state.sessionId) return;
+  try {
+    const data = await api('GET', '/sessions/' + state.sessionId + '/ir');
+    $('irJson').value = JSON.stringify(data.ir, null, 2);
+    $('irRev').textContent = 'revision ' + data.revision + ' · ' +
+      (data.ir.meta.app || '-') + ' · ' + (data.ir.meta.os || '-') +
+      ' · ' + data.ir.steps.length + ' 步';
+    $('irBox').style.display = 'block';
+    $('irMsg').textContent = '';
+  } catch (e) {
+    $('irBox').style.display = 'none';
+  }
+}
+
+$('irReload').onclick = () => { loadIr(); toast('已重新读取 IR'); };
+
+$('irSave').onclick = async () => {
+  let payload;
+  try { payload = JSON.parse($('irJson').value); }
+  catch (e) { toast('IR 不是合法 JSON: ' + e.message); return; }
+  try {
+    const data = await api('PUT', '/sessions/' + state.sessionId + '/ir', { ir: payload });
+    $('irJson').value = JSON.stringify(data.ir, null, 2);
+    $('irRev').textContent = 'revision ' + data.revision;
+    $('irMsg').textContent = '已保存，revision ' + data.revision + '；点「重放」按新 IR 跑一遍';
+    toast('IR 已保存');
+  } catch (e) { toast('保存失败: ' + e.message); }
+};
+
+$('irReplay').onclick = async () => {
+  try {
+    const data = await api('POST', '/sessions/' + state.sessionId + '/replay', {});
+    toast('已按当前 IR 起新会话重放');
+    await refreshSessions();
+    await selectSession(data.session.session_id);
+  } catch (e) { toast('重放失败: ' + e.message); }
+};
+
+async function selectSession(id) {
+  state.sessionId = id;
+  state.events = [];
+  state.lastSeq = 0;
+  $('timeline').innerHTML = '';
+  $('detail').style.display = 'block';
+  await refreshSessions();
+  await poll(true);
+  startPolling();
+  loadIr();
+}
+
+function startPolling() {
+  if (state.timer) return;
+  state.timer = setInterval(() => { poll(false); }, 1500);
+}
+
+async function poll(full) {
+  if (!state.sessionId) return;
+  try {
+    const since = full ? 0 : state.lastSeq;
+    const data = await api('GET', '/sessions/' + state.sessionId + '/events?since=' + since + '&wait=1');
+    if (data.events && data.events.length) {
+      state.lastSeq = data.last_seq;
+      data.events.forEach(renderEvent);
+    }
+    const detail = await api('GET', '/sessions/' + state.sessionId);
+    renderMeta(detail.session);
+  } catch (e) {
+    if (String(e.message).indexOf('会话不存在') >= 0) { state.sessionId = ''; }
+  }
+}
+
+function renderMeta(session) {
+  const rows = [
+    ['状态', pill(session.state)],
+    ['目标', escapeHtml(session.goal)],
+    ['应用', escapeHtml(session.app || '-')],
+    ['模式', escapeHtml(session.mode)],
+    ['步数', session.steps_used + ' / ' + session.max_steps],
+    ['断言', 'true ' + session.assertions.true + ' · false ' + session.assertions.false +
+             ' · unknown ' + session.assertions.unknown],
+    ['预算', '剩余 ' + session.budget.steps_left + ' 步 / ' + session.budget.seconds_left + 's'],
+    ['结论', escapeHtml((session.conclusion && session.conclusion.summary) || '-')],
+    ['证据目录', '<span class="muted">' + escapeHtml(session.dir || '-') + '</span>'],
+  ];
+  $('meta').innerHTML = rows.map(([k, v]) => '<div>' + k + '</div><div>' + v + '</div>').join('');
+
+  renderSteps(session);
+
+  const pending = session.pending_approval;
+  $('approval').style.display = pending ? 'block' : 'none';
+  if (pending) {
+    $('approvalTool').textContent = pending.tool + '（step ' + pending.step + '）';
+    $('approvalArgs').textContent = JSON.stringify(pending.args, null, 2);
+  }
+}
+
+function renderSteps(session) {
+  const box = $('stepsBox');
+  const table = $('steps');
+  const caseObj = session.case;
+  if (!caseObj || !caseObj.steps || !caseObj.steps.length) {
+    box.style.display = 'none';
+    table.innerHTML = '';
+    return;
+  }
+  box.style.display = 'block';
+  const head = '<tr><th style="width:44px">#</th><th>步骤</th><th>预期</th>' +
+               '<th style="width:84px">状态</th><th>依据</th></tr>';
+  const rows = caseObj.steps.map((step) => (
+    '<tr><td>' + step.no + '</td>' +
+    '<td>' + escapeHtml(step.action) + '</td>' +
+    '<td class="muted">' + escapeHtml(step.expected || '-') + '</td>' +
+    '<td><span class="badge ' + step.status + '">' + step.status + '</span></td>' +
+    '<td class="muted">' + escapeHtml(step.detail || '-') + '</td></tr>'
+  )).join('');
+  const progress = session.case_progress || {};
+  const summary = '共 ' + (progress.total || caseObj.steps.length) + ' 步 · passed ' +
+    (progress.passed || 0) + ' · failed ' + (progress.failed || 0) +
+    ' · unknown ' + (progress.unknown || 0) +
+    ' · pending ' + (progress.pending || 0);
+  table.innerHTML = '<div class="muted" style="margin-bottom:6px">' + summary + '</div>' +
+    '<table class="steps">' + head + rows + '</table>';
+}
+
+async function copyReport() {
+  if (!state.sessionId) return;
+  try {
+    const data = await api('GET', '/sessions/' + state.sessionId + '/report');
+    const report = data.report;
+    const lines = ['# 执行结果：' + (report.case && report.case.name ? report.case.name : report.goal),
+                   '', '- 结论：' + report.state + ' — ' +
+                   ((report.conclusion && report.conclusion.summary) || '-'),
+                   '- 断言：true ' + report.assertions.true + ' / false ' +
+                   report.assertions.false + ' / unknown ' + report.assertions.unknown];
+    if (report.case && report.case.steps) {
+      lines.push('', '| # | 步骤 | 预期 | 状态 | 依据 |', '|---|---|---|---|---|');
+      report.case.steps.forEach((step) => {
+        lines.push('| ' + step.no + ' | ' + step.action + ' | ' + (step.expected || '-') +
+                   ' | ' + step.status + ' | ' + (step.detail || '-') + ' |');
+      });
+    }
+    lines.push('', '证据目录：' + report.dir);
+    const text = lines.join('\n');
+    await navigator.clipboard.writeText(text);
+    toast('结果已复制到剪贴板');
+  } catch (e) { toast('复制失败: ' + e.message); }
+}
+
+const EVENT_LABEL = {
+  session_created: '会话创建', state: '状态', plan: '模型计划', tool_result: '工具结果',
+  observation: '观察', assertion: '断言', approval_request: '待审批', approval: '审批结果',
+  gate_denied: '策略拒绝', hint: '人工插话', conclusion: '结论', stop_requested: '中止请求',
+  case_step: '步骤结论',
+};
+
+function renderEvent(event) {
+  const item = document.createElement('div');
+  item.className = 'ev';
+  const detail = Object.assign({}, event);
+  delete detail.seq; delete detail.ts; delete detail.kind;
+  const shots = (event.evidence || []).filter((e) => e.kind === 'screenshot');
+  const payload = event.data || detail;
+  item.innerHTML = '<div class="kind">#' + event.seq + ' · ' +
+    (EVENT_LABEL[event.kind] || event.kind) + '</div>' +
+    '<pre>' + escapeHtml(JSON.stringify(payload, null, 2)) + '</pre>' +
+    shots.map((s) => '<img data-src="/sessions/' + state.sessionId + '/artifacts/' +
+      encodeURIComponent(s.name) + '" title="' + escapeHtml(s.name) + '" />').join('');
+  $('timeline').appendChild(item);
+  item.querySelectorAll('img[data-src]').forEach((img) => {
+    img.onclick = () => window.open(img.dataset.src, '_blank');
+    fetch(img.dataset.src, { headers: { 'X-Uita-Dsh-Token': state.token } })
+      .then((r) => r.blob()).then((blob) => { img.src = URL.createObjectURL(blob); })
+      .catch(() => { img.alt = '截图读取失败'; });
+  });
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+$('saveToken').onclick = () => {
+  state.token = $('token').value.trim();
+  localStorage.setItem('dshToken', state.token);
+  refreshSessions();
+  loadSettings();
+  toast('token 已保存');
+};
+
+$('create').onclick = async () => {
+  try {
+    const payload = {
+      goal: $('goal').value.trim(),
+      test_case: $('caseText').value.trim(),
+      app: $('app').value.trim(),
+      mode: $('mode').value,
+      max_steps: parseInt($('maxSteps').value, 10) || 30,
+    };
+    if (!payload.goal && !payload.test_case) { toast('请填写文本用例或目标'); return; }
+    const data = await api('POST', '/sessions', payload);
+    toast('会话已启动');
+    await selectSession(data.session.session_id);
+  } catch (e) { toast('启动失败: ' + e.message); }
+};
+
+$('pause').onclick = () => control('pause');
+$('resume').onclick = () => control('resume');
+$('stop').onclick = () => control('stop');
+$('approve').onclick = () => control('approve');
+$('reject').onclick = () => control('reject', '人工拒绝');
+
+async function control(action, reason) {
+  try {
+    await api('POST', '/sessions/' + state.sessionId + '/control', { action, reason: reason || '' });
+    await poll(false);
+  } catch (e) { toast(e.message); }
+}
+
+$('copyReport').onclick = copyReport;
+
+$('sendHint').onclick = async () => {
+  const text = $('hint').value.trim();
+  if (!text) return;
+  try {
+    await api('POST', '/sessions/' + state.sessionId + '/hint', { text });
+    $('hint').value = '';
+    toast('已发送');
+  } catch (e) { toast(e.message); }
+};
+
+$('callTool').onclick = async () => {
+  const name = $('tool').value;
+  let args = {};
+  const raw = $('toolArgs').value.trim();
+  if (raw) {
+    try { args = JSON.parse(raw); } catch (e) { toast('参数不是合法 JSON'); return; }
+  }
+  try {
+    const data = await api('POST', '/tools/' + name, { session_id: state.sessionId, args });
+    $('toolOut').textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    $('toolOut').textContent = '调用失败: ' + e.message;
+  }
+};
+
+$('token').value = state.token;
+refreshSessions();
+loadSettings();
+setInterval(() => { if (!state.sessionId) refreshSessions(); }, 4000);
+</script>
+</body>
+</html>

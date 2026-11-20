@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "app": "sample_web"
+  },
+  "pages": {
+    "首页": {
+      "anchors": ["页面主标题"],
+      "edges": {}
+    }
+  }
+}

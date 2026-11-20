@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "version": "3.0",
+    "app": "sample_web",
+    "description": "示例 Web 应用元素语义表（Rosetta Map）",
+    "default_strategy_chain": "L1,L2,L3,L4,L5,L6,L7,L8"
+  },
+  "sample_web": {
+    "首页": {
+      "页面主标题": {
+        "id": "el_sample_web_home_title",
+        "selector": "h1",
+        "usage": "示例页面主标题（如 Example Domain）",
+        "views": ["首页"],
+        "strategy_chain": "L1,L3,L5,L8"
+      },
+      "了解更多链接": {
+        "id": "el_sample_web_more_link",
+        "selector": "a[href]",
+        "usage": "页面底部的了解更多跳转链接",
+        "views": ["首页"]
+      }
+    }
+  }
+}

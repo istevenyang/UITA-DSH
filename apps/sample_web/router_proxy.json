@@ -1,0 +1,24 @@
+{
+  "_meta": {
+    "description": "sample_web 降级链配置示例：支持 App 适配级（__default__）与元素自定义级（按元素 id）",
+    "levels_reference": {
+      "L1": "MAP_EXACT（精确选择器匹配）",
+      "L2": "SEMANTIC（语义近似匹配）",
+      "L3": "TEXT_MATCH（界面可见文本匹配）",
+      "L4": "LABEL_MATCH（关联 <label> 文本匹配）",
+      "L5": "ROLE_MATCH（ARIA / AX 角色匹配）",
+      "L6": "LLM_SELECTOR（LLM 选择器推断）",
+      "L7": "VISUAL_FP（视觉指纹匹配）",
+      "L8": "LLM_VISUAL（OCR 文字识别 / 视觉大模型坐标定位与判定）",
+      "L9": "QT_PROBE（Qt 探针通道，按需启用）"
+    }
+  },
+  "__default__": {
+    "default": "L1,L2,L3,L4,L5,L6,L7,L8",
+    "runtime_define": ""
+  },
+  "el_sample_web_home_title": {
+    "default": "L1,L3,L5,L8",
+    "runtime_define": ""
+  }
+}

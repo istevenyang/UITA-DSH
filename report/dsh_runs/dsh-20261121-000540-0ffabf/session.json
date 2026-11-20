@@ -1,0 +1,82 @@
+{
+  "session_id": "dsh-20261121-000540-0ffabf",
+  "goal": "隐私开关检查",
+  "app": "",
+  "mode": "auto",
+  "state": "failed",
+  "steps_used": 1,
+  "max_steps": 30,
+  "heal_rounds": 0,
+  "assertions": {
+    "true": 0,
+    "false": 0,
+    "unknown": 0
+  },
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cached_tokens": 0,
+    "total_tokens": 0
+  },
+  "case": {
+    "name": "隐私开关检查",
+    "preconditions": [],
+    "parsed": true,
+    "raw": "用例名称：隐私开关检查\n1. 打开应用首页\n   预期：看到首页\n2. 断言「已开启」可见\n   预期：显示已开启",
+    "steps": [
+      {
+        "no": 1,
+        "action": "打开应用首页",
+        "expected": "看到首页",
+        "status": "unknown",
+        "detail": "会话收尾（failed）：存在未上报结论的用例步骤：1, 2；模型结论：done",
+        "evidence": []
+      },
+      {
+        "no": 2,
+        "action": "断言「已开启」可见",
+        "expected": "显示已开启",
+        "status": "unknown",
+        "detail": "会话收尾（failed）：存在未上报结论的用例步骤：1, 2；模型结论：done",
+        "evidence": []
+      }
+    ]
+  },
+  "case_progress": {
+    "pending": 0,
+    "running": 0,
+    "passed": 0,
+    "failed": 0,
+    "unknown": 2,
+    "skipped": 0,
+    "total": 2
+  },
+  "ir": null,
+  "ir_revision": 0,
+  "budget": {
+    "steps_left": 29,
+    "seconds_left": 600.0,
+    "heal_rounds_left": 1
+  },
+  "conclusion": {
+    "state": "failed",
+    "summary": "存在未上报结论的用例步骤：1, 2；模型结论：done",
+    "unknown_count": 0,
+    "case_progress": {
+      "pending": 0,
+      "running": 0,
+      "passed": 0,
+      "failed": 0,
+      "unknown": 2,
+      "skipped": 0,
+      "total": 2
+    },
+    "model_status": "passed"
+  },
+  "pending_approval": null,
+  "events": 9,
+  "created_at": 1795190740.8868039,
+  "updated_at": 1795190740.889,
+  "artifacts": [],
+  "dir": "/Users/yangpeizhen/Desktop/uita-dsh/report/dsh_runs/dsh-20261121-000540-0ffabf"
+}

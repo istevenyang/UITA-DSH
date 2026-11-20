@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "lint_target": "tcs",
+  "summary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "errors": 0,
+    "warnings": 0
+  },
+  "results": [
+    {
+      "file": "cases/sample_web/smoke_search.tcs",
+      "ok": true,
+      "issues": []
+    }
+  ]
+}

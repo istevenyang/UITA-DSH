@@ -1,0 +1,42 @@
+{
+  "session_id": "dsh-20261121-000540-1b1959",
+  "goal": "慢会话",
+  "app": "",
+  "mode": "auto",
+  "state": "aborted",
+  "steps_used": 0,
+  "max_steps": 30,
+  "heal_rounds": 0,
+  "assertions": {
+    "true": 0,
+    "false": 0,
+    "unknown": 0
+  },
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cached_tokens": 0,
+    "total_tokens": 0
+  },
+  "case": null,
+  "case_progress": null,
+  "ir": null,
+  "ir_revision": 0,
+  "budget": {
+    "steps_left": 30,
+    "seconds_left": 600.0,
+    "heal_rounds_left": 1
+  },
+  "conclusion": {
+    "state": "aborted",
+    "summary": "人工中止",
+    "unknown_count": 0,
+    "case_progress": null
+  },
+  "pending_approval": null,
+  "events": 6,
+  "created_at": 1795190740.0923362,
+  "updated_at": 1795190740.095,
+  "artifacts": [],
+  "dir": "/Users/yangpeizhen/Desktop/uita-dsh/report/dsh_runs/dsh-20261121-000540-1b1959"
+}

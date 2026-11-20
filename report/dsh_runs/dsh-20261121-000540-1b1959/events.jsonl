@@ -1,0 +1,6 @@
+{"seq": 1, "ts": 1795190740.092, "kind": "session_created", "goal": "慢会话", "app": "", "mode": "auto", "max_steps": 30, "case": null}
+{"seq": 2, "ts": 1795190740.094, "kind": "stop_requested"}
+{"seq": 3, "ts": 1795190740.094, "kind": "state", "from": "idle", "to": "preparing", "reason": "harness start"}
+{"seq": 4, "ts": 1795190740.095, "kind": "state", "from": "preparing", "to": "running", "reason": "loop start"}
+{"seq": 5, "ts": 1795190740.095, "kind": "conclusion", "state": "aborted", "summary": "人工中止", "unknown_count": 0, "case_progress": null}
+{"seq": 6, "ts": 1795190740.095, "kind": "state", "from": "running", "to": "aborted", "reason": "人工中止"}

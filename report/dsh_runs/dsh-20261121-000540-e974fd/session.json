@@ -1,0 +1,43 @@
+{
+  "session_id": "dsh-20261121-000540-e974fd",
+  "goal": "x",
+  "app": "",
+  "mode": "auto",
+  "state": "passed",
+  "steps_used": 1,
+  "max_steps": 30,
+  "heal_rounds": 0,
+  "assertions": {
+    "true": 0,
+    "false": 0,
+    "unknown": 0
+  },
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cached_tokens": 0,
+    "total_tokens": 0
+  },
+  "case": null,
+  "case_progress": null,
+  "ir": null,
+  "ir_revision": 0,
+  "budget": {
+    "steps_left": 29,
+    "seconds_left": 600.0,
+    "heal_rounds_left": 1
+  },
+  "conclusion": {
+    "state": "passed",
+    "summary": "done",
+    "unknown_count": 0,
+    "case_progress": null,
+    "model_status": "passed"
+  },
+  "pending_approval": null,
+  "events": 7,
+  "created_at": 1795190740.6191301,
+  "updated_at": 1795190740.622,
+  "artifacts": [],
+  "dir": "/Users/yangpeizhen/Desktop/uita-dsh/report/dsh_runs/dsh-20261121-000540-e974fd"
+}

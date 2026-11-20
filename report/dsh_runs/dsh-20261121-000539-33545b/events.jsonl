@@ -1,0 +1,14 @@
+{"seq": 1, "ts": 1795190739.107, "kind": "session_created", "goal": "ir_case", "app": "sample_web", "mode": "auto", "max_steps": 30, "case": {"name": "ir_case", "preconditions": [], "parsed": true, "raw": "", "steps": [{"no": 1, "action": "wait[首页-加载完成]", "expected": "", "status": "pending", "detail": "", "evidence": []}, {"no": 2, "action": "assert[首页-加载完成]", "expected": "exist:首页-加载完成", "status": "pending", "detail": "", "evidence": []}]}}
+{"seq": 2, "ts": 1795190739.108, "kind": "state", "from": "idle", "to": "preparing", "reason": "ir replay start"}
+{"seq": 3, "ts": 1795190739.108, "kind": "state", "from": "preparing", "to": "running", "reason": "ir replay loop"}
+{"seq": 4, "ts": 1795190739.109, "kind": "ir_loaded", "name": "ir_case", "app": "sample_web", "os": "macOS", "revision": 1, "steps": 2}
+{"seq": 5, "ts": 1795190739.109, "kind": "tool_result", "tool": "app_prepare", "args": {"app": "sample_web", "case_name": "ir_case"}, "ok": true, "error": "", "data": {"healthy": true}, "took_ms": 0, "evidence": []}
+{"seq": 6, "ts": 1795190739.109, "kind": "ir_step", "no": 1, "action": "wait", "target": "首页-加载完成"}
+{"seq": 7, "ts": 1795190739.109, "kind": "tool_result", "tool": "locate", "args": {"target": "首页-加载完成"}, "ok": true, "error": "", "data": {"level": "L1_MAP_EXACT", "found": true}, "took_ms": 0, "evidence": []}
+{"seq": 8, "ts": 1795190739.109, "kind": "case_step", "no": 1, "status": "passed", "action": "wait[首页-加载完成]", "detail": "等待命中（level=L1_MAP_EXACT）", "evidence": []}
+{"seq": 9, "ts": 1795190739.109, "kind": "ir_step", "no": 2, "action": "assert", "target": "首页-加载完成"}
+{"seq": 10, "ts": 1795190739.109, "kind": "tool_result", "tool": "assert_exist", "args": {"target": "首页-加载完成"}, "ok": true, "error": "", "data": {"verdict": "true"}, "took_ms": 0, "evidence": []}
+{"seq": 11, "ts": 1795190739.109, "kind": "assertion", "verdict": "true", "tool": "", "args": {}, "step_no": null, "tool_result_seq": null}
+{"seq": 12, "ts": 1795190739.109, "kind": "case_step", "no": 2, "status": "passed", "action": "assert[首页-加载完成]", "detail": "exist:首页-加载完成=true", "evidence": []}
+{"seq": 13, "ts": 1795190739.109, "kind": "conclusion", "state": "passed", "summary": "IR 执行通过（2 步，revision 1）", "unknown_count": 0, "case_progress": {"pending": 0, "running": 0, "passed": 2, "failed": 0, "unknown": 0, "skipped": 0, "total": 2}}
+{"seq": 14, "ts": 1795190739.109, "kind": "state", "from": "running", "to": "passed", "reason": "IR 执行通过（2 步，revision 1）"}

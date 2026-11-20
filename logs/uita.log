@@ -1,0 +1,42 @@
+2026-11-21 00:05:36,034 [DEBUG] [uita] Registered common actions (6): action_click, action_type, action_wait, action_switch, action_assert, action_scroll
+2026-11-21 00:05:36,052 [DEBUG] [uita] Registered app (目录扫描): sample_web
+2026-11-21 00:05:36,056 [WARNING] [uita.engine.mac_appkit.engine] atomacos 未安装，MacAppKitEngine 将不可用。安装方式：pip install atomacos pyobjc-framework-ApplicationServices
+2026-11-21 00:05:36,057 [DEBUG] [uita] Registered engine: win_uia, playwright, mac_appkit, http
+2026-11-21 00:05:36,062 [WARNING] [uita.engine.win_uia.window_contract] [WinUIA] 未知窗口后端 'selenium'，已回退 uiautomation（可选: uiautomation/pywinauto）
+2026-11-21 00:05:36,063 [WARNING] [uita.engine.win_uia.engine] [WinUIA] 已请求 pywinauto 后端但不可用，回退 uiautomation
+2026-11-21 00:05:36,064 [INFO] [uita.engine.win_uia.engine] [WinUIA] 窗口后端: pywinauto（灰度）
+2026-11-21 00:05:36,066 [WARNING] [uita.engine.win_uia.engine] [WinUIA] pywinauto 查找异常，本次回退 uiautomation: RuntimeError: COM error
+2026-11-21 00:05:36,070 [DEBUG] [uita.engine.win_uia.pywinauto_backend] [WinUIA] pywinauto 候选属性读取失败，跳过: stale element
+2026-11-21 00:05:36,071 [DEBUG] [uita.engine.win_uia.pywinauto_backend] [WinUIA] pywinauto descendants(control_type='Bogus') 失败，退化全量: 'Bogus'
+2026-11-21 00:05:36,072 [INFO] [uita.engine.win_uia.pywinauto_backend] [WinUIA] win32ui 不可用（缺 MFC 运行库），已注册空桩供 pywinauto import
+2026-11-21 00:05:36,076 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint title=设置 → hwnd=200 title='设置' pid=1
+2026-11-21 00:05:36,076 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint 窗口并入栈 hwnd=200 (栈深=2)
+2026-11-21 00:05:36,078 [WARNING] [uita.engine.win_uia.engine] [WinUIA] window_hint 未命中任何窗口，降级为旧窗口启发式: title=不存在
+2026-11-21 00:05:36,079 [WARNING] [uita.engine.win_uia.engine] [WinUIA] window_hint 未命中任何窗口（严格模式，元素视为未找到）: title=不存在
+2026-11-21 00:05:36,079 [WARNING] [uita.engine.win_uia.engine] [WinUIA] window_hint 未命中任何窗口，降级为旧窗口启发式: title=设置
+2026-11-21 00:05:36,081 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint process=helpertool → hwnd=500 title='辅助工具' pid=999
+2026-11-21 00:05:36,081 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint 窗口并入栈 hwnd=500 (栈深=2)
+2026-11-21 00:05:36,082 [WARNING] [uita.engine.win_uia.engine] [WinUIA] window_hint 未命中任何窗口，降级为旧窗口启发式: title=设置
+2026-11-21 00:05:36,083 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint title=设置 → hwnd=200 title='设置' pid=1
+2026-11-21 00:05:36,083 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint 窗口并入栈 hwnd=200 (栈深=2)
+2026-11-21 00:05:36,084 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint title=设置 → hwnd=200 title='设置' pid=1
+2026-11-21 00:05:36,084 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint 窗口并入栈 hwnd=200 (栈深=2)
+2026-11-21 00:05:36,084 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint title=设置 → hwnd=250 title='设置' pid=1
+2026-11-21 00:05:36,084 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint 窗口并入栈 hwnd=250 (栈深=3)
+2026-11-21 00:05:36,086 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint title=设置 → hwnd=200 title='设置' pid=1
+2026-11-21 00:05:36,086 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint 窗口并入栈 hwnd=200 (栈深=2)
+2026-11-21 00:05:36,086 [INFO] [uita.engine.win_uia.engine] [WinUIA] window_hint title=设置 → hwnd=200 title='设置' pid=1
+2026-11-21 00:05:36,090 [DEBUG] [asyncio] Using selector: KqueueSelector
+2026-11-21 00:05:36,092 [DEBUG] [asyncio] Using selector: KqueueSelector
+2026-11-21 00:05:36,095 [WARNING] [uita.core.platform.window_hint] [window_hint] 非法简写 '   '，已忽略
+2026-11-21 00:05:36,096 [WARNING] [uita.core.platform.window_hint] [window_hint] 非法简写 'bogus'，已忽略
+2026-11-21 00:05:36,096 [WARNING] [uita.core.platform.window_hint] [window_hint] 非法简写 'title'，已忽略
+2026-11-21 00:05:36,097 [WARNING] [uita.core.platform.window_hint] [window_hint] 非法简写 'foo=bar'，已忽略
+2026-11-21 00:05:36,098 [WARNING] [uita.core.platform.window_hint] [window_hint] 含未知键 ['unknown']，已忽略整条声明
+2026-11-21 00:05:36,098 [WARNING] [uita.core.platform.window_hint] [window_hint] 键 'title' 的值不是字符串（int），已忽略整条声明
+2026-11-21 00:05:36,099 [WARNING] [uita.core.platform.window_hint] [window_hint] 声明无有效条件或 role 与其他键并用：{'title': ''}，已忽略
+2026-11-21 00:05:36,099 [WARNING] [uita.core.platform.window_hint] [window_hint] 声明无有效条件或 role 与其他键并用：{'role': 'main', 'title': 'x'}，已忽略
+2026-11-21 00:05:36,100 [WARNING] [uita.core.platform.window_hint] [window_hint] 声明无有效条件或 role 与其他键并用：{'role': 'popup'}，已忽略
+2026-11-21 00:05:36,100 [WARNING] [uita.core.platform.window_hint] [window_hint] 不支持的类型 int，已忽略
+2026-11-21 00:05:36,101 [WARNING] [uita.core.platform.window_hint] [window_hint] 不支持的类型 list，已忽略
+2026-11-21 00:05:36,108 [WARNING] [uita.core.rosetta.base] [RosettaStore] 远端读取失败（path=/private/var/folders/1c/786kpktx5r5_4cn9plhysm5w0000gn/T/pytest-of-yangpeizhen/pytest-3/test_remote_rosetta_store_fail0/sample_web/rosetta_map.json），自动回退本地 JSON: DbRosettaStore 仅提供接口契约，请继承 RemoteDbRosettaStoreBase 并通过 register_rosetta_store() 或环境变量 UITA_ROSETTA_STORE_CLASS 注入具体数据库实现

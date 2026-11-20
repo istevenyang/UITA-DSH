@@ -1,0 +1,12 @@
+2026-11-21 00:05:36,095 [WARNING] [uita.core.platform.window_hint] [window_hint] 非法简写 '   '，已忽略
+2026-11-21 00:05:36,096 [WARNING] [uita.core.platform.window_hint] [window_hint] 非法简写 'bogus'，已忽略
+2026-11-21 00:05:36,096 [WARNING] [uita.core.platform.window_hint] [window_hint] 非法简写 'title'，已忽略
+2026-11-21 00:05:36,097 [WARNING] [uita.core.platform.window_hint] [window_hint] 非法简写 'foo=bar'，已忽略
+2026-11-21 00:05:36,098 [WARNING] [uita.core.platform.window_hint] [window_hint] 含未知键 ['unknown']，已忽略整条声明
+2026-11-21 00:05:36,098 [WARNING] [uita.core.platform.window_hint] [window_hint] 键 'title' 的值不是字符串（int），已忽略整条声明
+2026-11-21 00:05:36,099 [WARNING] [uita.core.platform.window_hint] [window_hint] 声明无有效条件或 role 与其他键并用：{'title': ''}，已忽略
+2026-11-21 00:05:36,099 [WARNING] [uita.core.platform.window_hint] [window_hint] 声明无有效条件或 role 与其他键并用：{'role': 'main', 'title': 'x'}，已忽略
+2026-11-21 00:05:36,100 [WARNING] [uita.core.platform.window_hint] [window_hint] 声明无有效条件或 role 与其他键并用：{'role': 'popup'}，已忽略
+2026-11-21 00:05:36,100 [WARNING] [uita.core.platform.window_hint] [window_hint] 不支持的类型 int，已忽略
+2026-11-21 00:05:36,101 [WARNING] [uita.core.platform.window_hint] [window_hint] 不支持的类型 list，已忽略
+2026-11-21 00:05:36,108 [WARNING] [uita.core.rosetta.base] [RosettaStore] 远端读取失败（path=/private/var/folders/1c/786kpktx5r5_4cn9plhysm5w0000gn/T/pytest-of-yangpeizhen/pytest-3/test_remote_rosetta_store_fail0/sample_web/rosetta_map.json），自动回退本地 JSON: DbRosettaStore 仅提供接口契约，请继承 RemoteDbRosettaStoreBase 并通过 register_rosetta_store() 或环境变量 UITA_ROSETTA_STORE_CLASS 注入具体数据库实现
