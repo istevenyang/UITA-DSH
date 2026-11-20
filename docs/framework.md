@@ -1,5 +1,9 @@
 # UITA-DSH 框架扩展与接入指南（Framework Extension & Onboarding Guide）
 
+<p align="left">
+  <a href="framework_en.md">English</a> | <strong>简体中文</strong>
+</p>
+
 本文档说明 **UITA-DSH (Universal Intelligent Test Architecture With Deterministic Skill Harness & Cross-Platform UI Automation Runtime)** 的分层解耦原则、新被测应用（App）接入完整流程，以及框架内全部功能注册中心（Registries）与约定式接入点（Integration Points）。
 
 ---
