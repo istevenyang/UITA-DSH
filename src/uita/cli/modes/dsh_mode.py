@@ -143,6 +143,12 @@ def _handle_dsh_run(cli) -> int:
         stall_timeout_s=float(getattr(config, "UITA_DSH_STALL_S", 300) or 300),
     )
     ctx = ToolContext(session=session, app_name=session.app_name)
+    skill_name = str(getattr(cli, "skill", "") or "").strip()
+    agent_name = str(getattr(cli, "agent", "") or "").strip()
+    if skill_name or agent_name:
+        from uita.tools.dsh.headless import _inject_skill_or_agent_hint
+
+        _inject_skill_or_agent_hint(session, ctx, skill=skill_name, agent=agent_name)
 
     async def _run_and_cleanup():
         try:

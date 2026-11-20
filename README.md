@@ -138,6 +138,55 @@ For code changes (PR / MR / commit / branch), `sentinel` (`.dsh/skills/sentinel/
    - Strictly verifies real test runner exit codes and JUnit XML artifacts, distinguishing genuine behavioral assertion failures (`AssertionError`) from environment/setup errors.
 3. **Guarded Knowledge Write-Back**: After verification, `ci/sentinel_kb_writeback.py` incrementally writes new pitfalls, defect propagation chains, and 5-dimensional facts into `<!-- kb:auto:start/end -->` guarded blocks under `.dsh/knowledge/products/<product>/`.
 
+#### Launching the `sentinel` Agent via `dsh`
+
+You can invoke the `sentinel` Agent (loading `.dsh/agents/sentinel.md` and the 9-step state machine in `.dsh/skills/sentinel/SKILL.md`) via `dsh run`, `dsh -p`, or `uita --mode dsh-run`:
+
+```bash
+# 1. Standard `dsh run`: run sentinel against the current branch or commit changes
+dsh run \
+  --agent sentinel \
+  --skill sentinel \
+  --app sample_web \
+  --max-steps 90 \
+  --goal "Run the 9-step sentinel workflow: code_diff_type=branch, change_locator=HEAD, product_code=sample_web"
+
+# 2. Specify a commit SHA or PR/MR with an optional requirement doc / issue link
+dsh run \
+  --agent sentinel \
+  --skill sentinel \
+  --app sample_web \
+  --max-steps 90 \
+  --goal "Run sentinel verification: code_diff_type=commit, change_locator=a1b2c3d, product_code=sample_web, issue_url=docs/req.md"
+
+# 3. Single-line headless streaming mode (`-p -y` with NDJSON stream output for CI)
+dsh -p -y \
+  --agent sentinel \
+  --skill sentinel \
+  --app sample_web \
+  --max-steps 90 \
+  --output-format stream-json \
+  -- "Run sentinel: code_diff_type=branch, change_locator=main..HEAD, product_code=sample_web"
+
+# 4. Equivalent invocation via `uita --mode dsh-run`
+uita --mode dsh-run \
+  --agent sentinel \
+  --skill sentinel \
+  --app sample_web \
+  --dsh-mode auto \
+  --dsh-max-steps 90 \
+  --goal "Run sentinel: code_diff_type=commit, change_locator=HEAD, product_code=sample_web"
+```
+
+| Parameter | Description |
+| :--- | :--- |
+| `--agent sentinel` | Loads the `.dsh/agents/sentinel.md` agent persona and entry discipline |
+| `--skill sentinel` | Injects the `.dsh/skills/sentinel/SKILL.md` immutable 9-step state machine |
+| `--app <app_name>` | Target application name (maps to `apps/<app_name>/` and live verification engine) |
+| `--max-steps 90` | Recommended step budget (`90`) for the full 9-step `sentinel` workflow |
+| `--workdir <path>` | Optional target repository workspace root (defaults to current working directory) |
+| Key fields in `--goal` | `code_diff_type` (`branch`/`commit`/`mr`/`ci`), `change_locator` (branch/SHA/MR ID), `product_code` (maps to `.dsh/knowledge/products/<product_code>/`), `issue_url` *(optional requirement doc or defect platform ticket)* |
+
 ---
 
 ## 4. Extension Interfaces (External Subsystem Integration)

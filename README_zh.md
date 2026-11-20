@@ -138,6 +138,55 @@ pytest tests/test_ci_sentinel_*.py -q                   # Sentinel 单测红绿�
    - 强制校验真实测试 Runner 退出码与 JUnit XML 产物，区分「真实业务断言红（`AssertionError`）」与「环境错误红」，防止伪造通过或跳步篡改。
 3. **经验受控回写**：验证完毕后通过 `ci/sentinel_kb_writeback.py` 将新增踩坑、缺陷传播链与五维事实增量写入 `.dsh/knowledge/products/<product>/` 的 `<!-- kb:auto:start/end -->` 围栏区。
 
+#### 通过 `dsh` 发起 `sentinel` Agent 命令示例
+
+可通过 `dsh run`、`dsh -p` 或 `uita --mode dsh-run` 指定 `--agent sentinel`（配合 `--skill sentinel`）启动 9 步状态机：
+
+```bash
+# 1. 标准 dsh run：基于当前分支变更发起 sentinel 9 步验证
+dsh run \
+  --agent sentinel \
+  --skill sentinel \
+  --app sample_web \
+  --max-steps 90 \
+  --goal "按 sentinel 9步状态机对当前分支变更执行风险分析、单测红绿验证与知识回写：code_diff_type=branch, change_locator=HEAD, product_code=sample_web"
+
+# 2. 指定具体 Commit SHA 或 PR/MR，并关联需求文档/缺陷单（可选）
+dsh run \
+  --agent sentinel \
+  --skill sentinel \
+  --app sample_web \
+  --max-steps 90 \
+  --goal "执行 sentinel 变更验证：code_diff_type=commit, change_locator=a1b2c3d, product_code=sample_web, issue_url=docs/req.md"
+
+# 3. 单行无头流式模式（-p -y 配合 stream-json，适合 CI / 脚本集成）
+dsh -p -y \
+  --agent sentinel \
+  --skill sentinel \
+  --app sample_web \
+  --max-steps 90 \
+  --output-format stream-json \
+  -- "执行 sentinel：code_diff_type=branch, change_locator=main..HEAD, product_code=sample_web"
+
+# 4. 通过 uita --mode dsh-run 统一入口调用
+uita --mode dsh-run \
+  --agent sentinel \
+  --skill sentinel \
+  --app sample_web \
+  --dsh-mode auto \
+  --dsh-max-steps 90 \
+  --goal "执行 sentinel：code_diff_type=commit, change_locator=HEAD, product_code=sample_web"
+```
+
+| 参数 | 作用说明 |
+| :--- | :--- |
+| `--agent sentinel` | 自动加载 `.dsh/agents/sentinel.md` 角色契约与入口纪律 |
+| `--skill sentinel` | 自动注入 `.dsh/skills/sentinel/SKILL.md` 固定 9 步状态机规程 |
+| `--app <app_name>` | 指定被测应用（对应 `apps/<app_name>/` 与真机验证引擎） |
+| `--max-steps 90` | `sentinel` 9 步完整预算建议设为 `90`（默认 `30` 步偏小） |
+| `--workdir <path>` | 可选，指定被测代码仓库根目录（缺省为当前工作目录） |
+| `--goal` 内关键字段 | `code_diff_type`（`branch`/`commit`/`mr`/`ci`）、`change_locator`（分支/SHA/MR号）、`product_code`（对应 `.dsh/knowledge/products/<product_code>/`）、`issue_url`（可选，需求文档或缺陷管理平台单据） |
+
 ---
 
 ## 4. 扩展接口指南（外部子系统接入）

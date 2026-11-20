@@ -135,6 +135,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     # DSH 参数
     p.add_argument("--goal", default="", help="dsh-run：单次自然语言目标")
+    p.add_argument("--agent", default="", help="dsh-run：加载 .dsh/agents/<name>.md（如 sentinel / ui-tester）")
+    p.add_argument("--skill", default="", help="dsh-run：加载 .dsh/skills/<name>/SKILL.md（如 sentinel / ui-automation / kb-recall）")
     p.add_argument("--case-text", default="", help="dsh-run：文本用例正文或文件路径")
     p.add_argument("--case-file", default="", help="dsh-run：文本用例文件路径（.md/.txt/.json）")
     p.add_argument("--ir", default="", help="dsh-replay：步骤 IR 文件路径（uita.ir/1 JSON）")
