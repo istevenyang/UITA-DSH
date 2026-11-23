@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -126,12 +127,28 @@ class DshTool(ABC):
             raise DshToolError(f"{self.name}: 缺少必填参数 {missing}")
         return args
 
-    async def invoke(self, ctx: Any, args: Optional[dict[str, Any]] = None) -> ToolResult:
-        """带计时与参数校验的统一调用入口（harness/MCP/调试台共用）。"""
+    async def invoke(self, ctx: Any, args: Optional[dict[str, Any]] = None, *,
+                     timeout_s: Optional[float] = None) -> ToolResult:
+        """带计时、参数校验与超时的统一调用入口（harness/MCP/调试台共用）。
+
+        ``timeout_s is None`` 时使用工具自身的 ``timeout_s``（<=0 表示不限）。
+        显式传入时以该值为硬上限；<=0 表示预算已耗尽，不启动工具。
+        """
         started = time.monotonic()
         try:
             payload = self.validate_args(dict(args or {}))
-            result = await self.run(ctx, **payload)
+            if timeout_s is None:
+                limit = float(self.timeout_s or 0)
+                limited = limit > 0
+            else:
+                limit = float(timeout_s)
+                limited = True
+            if limited and limit <= 0:
+                result = ToolResult.fail(f"{self.name}: 执行超时（预算已耗尽）")
+            elif limited:
+                result = await self._run_with_timeout(ctx, payload, limit)
+            else:
+                result = await self.run(ctx, **payload)
             if not isinstance(result, ToolResult):
                 result = ToolResult(ok=True, data={"value": result})
         except DshToolError as exc:
@@ -142,6 +159,23 @@ class DshTool(ABC):
             result = ToolResult.fail(f"{type(exc).__name__}: {exc}")
         result.took_ms = int((time.monotonic() - started) * 1000)
         return result
+
+    async def _run_with_timeout(self, ctx: Any, payload: dict[str, Any],
+                                limit: float) -> ToolResult:
+        """在 ``limit`` 秒内执行 ``run``；超时取消任务并返回失败，不把它当成工具自己的异常。"""
+        task = asyncio.ensure_future(self.run(ctx, **payload))
+        try:
+            done, _pending = await asyncio.wait({task}, timeout=limit)
+        except asyncio.CancelledError:
+            task.cancel()
+            await _drain_task(task)
+            raise
+        if task not in done:
+            task.cancel()
+            await _drain_task(task)
+            shown = f"{limit:.0f}s" if limit >= 10 else f"{limit:.2f}s"
+            return ToolResult.fail(f"{self.name}: 执行超时（{shown}）")
+        return task.result()
 
     @abstractmethod
     async def run(self, ctx: Any, **args: Any) -> ToolResult:
@@ -167,6 +201,33 @@ def register_dsh_tool(cls: type[DshTool] | None = None):
         return target
 
     return _register(cls) if cls is not None else _register
+
+
+def bound_timeout(tool: DshTool, session: Any = None) -> Optional[float]:
+    """本次调用的超时上限。
+
+    无会话时返回 ``None``（沿用工具自身 ``timeout_s``）。有会话时取工具上限与
+    剩余时长的较小值；剩余时长耗尽时返回 ``0``，调用方应立即失败而不启动工具。
+    """
+    tool_limit = float(getattr(tool, "timeout_s", 0) or 0)
+    budget = getattr(session, "budget_left", None)
+    if not callable(budget):
+        return None
+    try:
+        left = float(budget().get("seconds_left") or 0)
+    except (TypeError, ValueError, AttributeError):
+        return None if tool_limit <= 0 else tool_limit
+    if tool_limit > 0:
+        return max(0.0, min(tool_limit, left))
+    return max(0.0, left)
+
+
+async def _drain_task(task: "asyncio.Future[Any]") -> None:
+    """取消后收掉任务，避免 'exception was never retrieved'。"""
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):
+        return
 
 
 def get_tool(name: str) -> DshTool | None:

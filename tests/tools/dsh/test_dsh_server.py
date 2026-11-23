@@ -105,6 +105,39 @@ def test_state_lists_tools():
             "assert_exist", "case_run", "task_finish"} <= names
 
 
+def test_create_session_rejects_bad_budget():
+    server = _server()
+    status, payload, _ = _call(server, "POST", "/sessions", {"goal": "x", "max_steps": "abc"})
+    assert status == 400
+    assert "max_steps" in payload["error"]
+    status, payload, _ = _call(server, "POST", "/sessions", {"goal": "x", "timeout_s": -5})
+    assert status == 400
+    assert "timeout_s" in payload["error"]
+    assert server.sessions == {}
+
+
+def test_planner_factory_failure_releases_engine():
+    calls = {"n": 0}
+
+    def factory():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("no llm")
+        return FakePlanner([
+            {"tool": "task_finish", "args": {"status": "passed", "summary": "done"}},
+        ])
+
+    server = _server(planner_factory=factory)
+    session_id = _new_session(server, "坏规划器")
+    final = _wait_terminal(server, session_id)
+    assert final["state"] == "error"
+    assert "no llm" in final["conclusion"]["summary"]
+    session_id2 = _new_session(server, "恢复")
+    final2 = _wait_terminal(server, session_id2)
+    assert final2["state"] == "passed"
+    assert session_id2 != session_id
+
+
 def test_create_session_requires_goal():
     server = _server()
     status, payload, _ = _call(server, "POST", "/sessions", {})

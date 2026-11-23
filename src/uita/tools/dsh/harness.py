@@ -20,8 +20,8 @@ from typing import Any, Optional
 
 from .planner import DshPlanner, PlannerError
 from .policy import PolicyGate
-from .registry import (TIER_ACTION, TIER_WRITE, DshTool, all_tools,
-                       load_builtin_tools)
+from .registry import (TIER_ACTION, TIER_WRITE, DshTool, DshToolAbort, all_tools,
+                       bound_timeout, load_builtin_tools)
 from .session import DshSession, SessionState, SessionStopped
 from .textcase import STEP_PASSED, STEP_UNKNOWN
 
@@ -91,7 +91,7 @@ async def _auto_observe(ctx: Any, registry: dict[str, DshTool],
     tool = registry.get(OBSERVE_TOOL)
     if tool is None:
         return
-    result = await tool.invoke(ctx, {})
+    result = await tool.invoke(ctx, {}, timeout_s=bound_timeout(tool, session))
     session.append_event(
         "observation", ok=result.ok, error=result.error,
         data=_shorten(result.data),
@@ -236,7 +236,9 @@ async def run_goal(session: DshSession, ctx: Any, planner: Optional[Any] = None,
 
             session.bump_step()
             current = session.case.next_pending() if session.case is not None else None
-            result = await tool.invoke(ctx, plan.args)
+            result = await tool.invoke(
+                ctx, plan.args, timeout_s=bound_timeout(tool, session),
+            )
             result_event = session.append_event(
                 "tool_result", tool=tool.name, args=_shorten(plan.args),
                 step_no=current.no if current is not None else None,
@@ -268,6 +270,8 @@ async def run_goal(session: DshSession, ctx: Any, planner: Optional[Any] = None,
         return dict(session.conclusion)
     except SessionStopped as exc:
         return _finish(session, SessionState.ABORTED, str(exc))
+    except DshToolAbort as exc:
+        return _finish(session, SessionState.ERROR, f"工具中止会话: {exc}")
     except asyncio.CancelledError:
         _finish(session, SessionState.ABORTED, "任务被取消")
         raise

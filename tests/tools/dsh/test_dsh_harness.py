@@ -1,6 +1,9 @@
 """DSH 主循环：六阶段、审批闸、heal、预算、unknown 防假绿。"""
 from __future__ import annotations
 
+import asyncio
+import time
+
 import pytest
 
 from dsh_helpers import FakePlanner
@@ -194,6 +197,31 @@ async def test_max_steps_exhausted_aborts(make_session, monkeypatch):
     conclusion = await run_goal(session, ctx, planner, tools=tools, auto_observe=False)
     assert conclusion["state"] == "aborted"
     assert "步数预算" in conclusion["summary"]
+
+
+async def test_hung_tool_is_cut_by_session_budget(make_session, monkeypatch):
+    class _Hang(DshTool):
+        name = "hang"
+        tier = TIER_READ
+        timeout_s = 30
+        params = {}
+
+        async def run(self, ctx) -> ToolResult:
+            await asyncio.sleep(30)
+            return ToolResult(ok=True, data={"done": True})
+
+    tools = _registry(monkeypatch)
+    tools["hang"] = _Hang()
+    session = make_session(mode=Mode.AUTO, timeout_s=1, max_steps=1)
+    ctx = type("C", (), {"last_observation": {}, "session": session})()
+    planner = FakePlanner([{"tool": "hang", "args": {}}])
+    started = time.monotonic()
+    conclusion = await run_goal(session, ctx, planner, tools=tools, auto_observe=False)
+    assert time.monotonic() - started < 5
+    assert conclusion["state"] == "aborted"
+    failed = [event for event in session.events
+              if event["kind"] == "tool_result" and event.get("ok") is False]
+    assert failed and "超时" in str(failed[0].get("error"))
 
 
 async def test_readonly_denies_action_then_finishes(make_session, monkeypatch):

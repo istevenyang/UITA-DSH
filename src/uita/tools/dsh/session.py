@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -28,6 +29,15 @@ from .textcase import (STEP_PENDING, STEP_TERMINAL, STEP_UNKNOWN, STEP_STATUSES,
                        TextCase)
 
 logger = logging.getLogger("uita.dsh")
+
+
+def _usage_int(value: Any) -> int:
+    """把模型用量字段收成非负整数；非法值当 0，避免打断会话。"""
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, number)
 
 
 class SessionState(str, Enum):
@@ -135,6 +145,7 @@ class DshSession:
     _loop: Any = field(default=None, init=False)
 
     def __post_init__(self) -> None:
+        self._lock = threading.RLock()
         self.now = self.now or time.time
         self.mode = self.mode if isinstance(self.mode, Mode) else Mode.parse(self.mode)
         self.session_id = self.session_id or new_session_id()
@@ -155,21 +166,62 @@ class DshSession:
     # ------------------------------------------------------------------
 
     def transition(self, target: SessionState, reason: str = "") -> None:
-        target = SessionState(target)
-        if target is self.state:
-            return
-        allowed = _ALLOWED_TRANSITIONS.get(self.state, frozenset())
-        if target not in allowed:
-            raise InvalidTransition(f"{self.state.value} → {target.value} 非法")
-        previous = self.state
-        self.state = target
-        self.updated_at = float(self.now())
+        with self._lock:
+            target = SessionState(target)
+            if target is self.state:
+                return
+            allowed = _ALLOWED_TRANSITIONS.get(self.state, frozenset())
+            if target not in allowed:
+                raise InvalidTransition(f"{self.state.value} → {target.value} 非法")
+            previous = self.state
+            self.state = target
+            self.updated_at = float(self.now())
+            previous_value = previous.value
+            target_value = target.value
         self.append_event(
-            "state", **{"from": previous.value, "to": target.value, "reason": reason},
+            "state", **{"from": previous_value, "to": target_value, "reason": reason},
         )
 
     def is_terminal(self) -> bool:
-        return self.state in TERMINAL_STATES
+        with self._lock:
+            return self.state in TERMINAL_STATES
+
+    def ensure_terminal(self, state: SessionState, summary: str) -> dict[str, Any]:
+        """把尚未终态的会话收敛到终态。已经终态时不改写既有结论。
+
+        请求的目标若当前状态不允许，改落到仍允许的 ERROR / ABORTED / FAILED。
+        状态机也无法移动时强制记为 ERROR，避免引擎被一条非终态会话永久占用。
+        """
+        if self.is_terminal():
+            return dict(self.conclusion)
+        target = SessionState(state)
+        with self._lock:
+            allowed = _ALLOWED_TRANSITIONS.get(self.state, frozenset())
+        if target not in allowed:
+            for fallback in (SessionState.ERROR, SessionState.ABORTED, SessionState.FAILED):
+                if fallback in allowed:
+                    target = fallback
+                    break
+        if target in {SessionState.FAILED, SessionState.ABORTED, SessionState.ERROR}:
+            self.close_open_steps(
+                STEP_UNKNOWN, reason=f"会话收尾（{target.value}）：{summary}",
+            )
+        try:
+            self.transition(target, summary)
+        except InvalidTransition:
+            logger.warning("dsh: 终态迁移失败，强制记为 error: %s", summary)
+            if not self.is_terminal():
+                with self._lock:
+                    previous = self.state
+                    self.state = SessionState.ERROR
+                    previous_value = previous.value
+                self.append_event(
+                    "state", **{"from": previous_value, "to": "error", "reason": summary},
+                )
+            target = SessionState.ERROR
+        if self.is_terminal():
+            target = self.state
+        return self.set_conclusion(target, summary)
 
     def pause(self) -> bool:
         if self.state is not SessionState.RUNNING:
@@ -184,64 +236,77 @@ class DshSession:
         return True
 
     def request_stop(self) -> None:
-        self._stop_requested = True
+        with self._lock:
+            self._stop_requested = True
         self.append_event("stop_requested")
-        if self._approval is not None:
-            self.resolve_approval(False, "会话被中止")
+        self.resolve_approval(False, "会话被中止")
 
     def stop_requested(self) -> bool:
-        return self._stop_requested
+        with self._lock:
+            return self._stop_requested
 
     # ------------------------------------------------------------------
     # 事件
     # ------------------------------------------------------------------
 
     def append_event(self, kind: str, **payload: Any) -> dict[str, Any]:
-        self._seq += 1
-        event = {
-            "seq": self._seq,
-            "ts": round(float(self.now()), 3),
-            "kind": kind,
-            **payload,
-        }
-        self.events.append(event)
-        self.updated_at = event["ts"]
-        if kind != "heartbeat":
-            self._last_activity_at = event["ts"]
-        if kind == "plan":
-            tool_name = str(payload.get("tool") or "").strip()
-            raw_args = payload.get("args") or {}
+        with self._lock:
+            self._seq += 1
+            event = {
+                "seq": self._seq,
+                "ts": round(float(self.now()), 3),
+                "kind": kind,
+                **payload,
+            }
+            self.events.append(event)
+            self.updated_at = event["ts"]
+            if kind != "heartbeat":
+                self._last_activity_at = event["ts"]
+            if kind == "plan":
+                self._note_plan_loop(payload)
+            store = self.store
+        if store is not None:
             try:
-                args_sig = json.dumps(raw_args, ensure_ascii=False, sort_keys=True)
-            except TypeError:
-                args_sig = str(raw_args)
-            sig = f"{tool_name}::{args_sig[:200]}"
-            if tool_name and sig == self._loop_signature:
-                self._loop_count += 1
-                if self.max_loop_repeat > 1 and self._loop_count == self.max_loop_repeat - 1:
-                    warn = (
-                        f"警告：你已连续 {self._loop_count} 次以相同参数调用 {tool_name}，"
-                        "禁止继续重复同一调用；请更换策略或调用 task_finish 收尾。"
-                    )
-                    if warn not in self._hints:
-                        self._hints.append(warn)
-            else:
-                self._loop_signature = sig
-                self._loop_count = 1 if tool_name else 0
-        if self.store is not None:
-            try:
-                self.store.append_event(event)
+                store.append_event(event)
             except Exception as exc:  # noqa: BLE001 - 证据落盘失败不中断会话
                 logger.warning("dsh: 事件落盘失败 %s: %s", self.session_id, exc)
-        if callable(self.on_event):
+        callback = self.on_event
+        if callable(callback):
             try:
-                self.on_event(event)
+                callback(event)
             except Exception as exc:  # noqa: BLE001 - 回调失败不中断会话
                 logger.debug("dsh: on_event 回调异常: %s", exc)
         return event
 
+    def _note_plan_loop(self, payload: dict[str, Any]) -> None:
+        """记录连续相同计划。调用方须已持有 ``_lock``。"""
+        tool_name = str(payload.get("tool") or "").strip()
+        raw_args = payload.get("args") or {}
+        try:
+            args_sig = json.dumps(raw_args, ensure_ascii=False, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            args_sig = str(raw_args)
+        sig = f"{tool_name}::{args_sig[:200]}"
+        if tool_name and sig == self._loop_signature:
+            self._loop_count += 1
+            if self.max_loop_repeat > 1 and self._loop_count == self.max_loop_repeat - 1:
+                warn = (
+                    f"警告：你已连续 {self._loop_count} 次以相同参数调用 {tool_name}，"
+                    "禁止继续重复同一调用；请更换策略或调用 task_finish 收尾。"
+                )
+                if warn not in self._hints:
+                    self._hints.append(warn)
+        else:
+            self._loop_signature = sig
+            self._loop_count = 1 if tool_name else 0
+
     def events_since(self, seq: int) -> list[dict[str, Any]]:
-        return [event for event in self.events if event["seq"] > int(seq)]
+        with self._lock:
+            return [event for event in self.events if event["seq"] > int(seq)]
+
+    def _events_snapshot(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(self.events)
 
     # ------------------------------------------------------------------
     # 文本用例步骤
@@ -252,22 +317,28 @@ class DshSession:
         """记录一个用例步骤的结论（非法步骤号/状态直接抛错，不静默吞）。"""
         if self.case is None:
             raise ValueError("当前会话没有文本用例")
-        step = self.case.step(no)
-        if step is None:
-            raise ValueError(f"用例没有第 {no} 步（共 {len(self.case.steps)} 步）")
-        if status not in STEP_STATUSES:
-            raise ValueError(f"非法步骤状态: {status!r}")
-        if step.is_terminal() and step.status != status:
-            raise ValueError(f"第 {no} 步已是终态 {step.status}，不能改成 {status}")
-        step.status = status
-        if detail:
-            step.detail = str(detail)
-        if evidence:
-            step.evidence.extend(evidence)
+        with self._lock:
+            step = self.case.step(no)
+            if step is None:
+                raise ValueError(f"用例没有第 {no} 步（共 {len(self.case.steps)} 步）")
+            if status not in STEP_STATUSES:
+                raise ValueError(f"非法步骤状态: {status!r}")
+            if step.is_terminal() and step.status != status:
+                raise ValueError(f"第 {no} 步已是终态 {step.status}，不能改成 {status}")
+            step.status = status
+            if detail:
+                step.detail = str(detail)
+            if evidence:
+                step.evidence.extend(evidence)
+            action = step.action
+            step_status = step.status
+            step_detail = step.detail
+            step_evidence = list(step.evidence)
+            step_no = step.no
         event = self.append_event(
-            "case_step", no=step.no, status=step.status,
-            action=step.action, detail=step.detail,
-            evidence=list(step.evidence),
+            "case_step", no=step_no, status=step_status,
+            action=action, detail=step_detail,
+            evidence=step_evidence,
         )
         return event
 
@@ -290,15 +361,19 @@ class DshSession:
         if self.case is None:
             return []
         changed: list[int] = []
-        for step in self.case.steps:
-            if step.status in STEP_TERMINAL:
-                continue
-            step.status = status
-            if reason:
-                step.detail = reason
-            changed.append(step.no)
-            self.append_event("case_step", no=step.no, status=status,
-                              action=step.action, detail=step.detail, evidence=[])
+        pending: list[tuple[int, str, str]] = []
+        with self._lock:
+            for step in self.case.steps:
+                if step.status in STEP_TERMINAL:
+                    continue
+                step.status = status
+                if reason:
+                    step.detail = reason
+                changed.append(step.no)
+                pending.append((step.no, step.action, step.detail))
+        for no, action, detail in pending:
+            self.append_event("case_step", no=no, status=status,
+                              action=action, detail=detail, evidence=[])
         return changed
 
     # ------------------------------------------------------------------
@@ -306,15 +381,17 @@ class DshSession:
     # ------------------------------------------------------------------
 
     def bump_step(self, count: int = 1) -> int:
-        self.steps_used += count
-        return self.steps_used
+        with self._lock:
+            self.steps_used += count
+            return self.steps_used
 
     def record_verdict(self, verdict: str, *, tool: str = "",
                        args: Optional[dict[str, Any]] = None,
                        step_no: Optional[int] = None,
                        tool_result_seq: Optional[int] = None) -> None:
-        key = verdict if verdict in self.assertions else "unknown"
-        self.assertions[key] += 1
+        with self._lock:
+            key = verdict if verdict in self.assertions else "unknown"
+            self.assertions[key] += 1
         self.append_event("assertion", verdict=key, tool=tool,
                           args=dict(args or {}), step_no=step_no,
                           tool_result_seq=tool_result_seq)
@@ -333,9 +410,10 @@ class DshSession:
 
     def unresolved_false_assertions(self) -> list[dict[str, Any]]:
         latest: dict[str, dict[str, Any]] = {}
-        sources = {event["seq"]: event for event in self.events
+        events = self._events_snapshot()
+        sources = {event["seq"]: event for event in events
                    if event["kind"] == "tool_result"}
-        for event in self.events:
+        for event in events:
             if event["kind"] != "assertion":
                 continue
             if event["verdict"] != "false" and self._assertion_source(event, sources) is None:
@@ -345,7 +423,7 @@ class DshSession:
             if event.get("tool") == "assert_text":
                 args.setdefault("match", "contains")
             identity = json.dumps([event.get("step_no"), event.get("tool"), args],
-                                  sort_keys=True, ensure_ascii=False)
+                                  sort_keys=True, ensure_ascii=False, default=str)
             latest[identity] = event
         return [event for event in latest.values() if event["verdict"] == "false"]
 
@@ -353,14 +431,15 @@ class DshSession:
         if self.case is None or self.case.next_pending() is None or \
                 self.case.next_pending().no != no:
             raise ValueError(f"必须按顺序上报当前步骤，不能提前上报第 {no} 步")
-        assertions = [event for event in self.events
+        events = self._events_snapshot()
+        assertions = [event for event in events
                       if event["kind"] == "assertion" and event.get("step_no") == no]
         if any(event["verdict"] == "unknown" for event in assertions):
             raise ValueError(f"第 {no} 步存在 unknown，不能上报 passed")
         if any(event.get("step_no") == no
                for event in self.unresolved_false_assertions()):
             raise ValueError(f"第 {no} 步存在未解决的 false，不能上报 passed")
-        sources = {event["seq"]: event for event in self.events
+        sources = {event["seq"]: event for event in events
                    if event["kind"] == "tool_result"}
         consumed = {ref.get("tool_result_seq") for step in self.case.steps
                     for ref in step.evidence if ref.get("kind") == "assertion"}
@@ -401,7 +480,7 @@ class DshSession:
                 if ref.get("tool_result_seq") is not None
             }
             action_ev: list[dict[str, Any]] = []
-            for event in self.events:
+            for event in self._events_snapshot():
                 if event.get("kind") != "tool_result" or event.get("step_no") != no:
                     continue
                 if event.get("ok") is not True or event.get("seq") in consumed:
@@ -435,13 +514,14 @@ class DshSession:
             for ref in step.evidence
             if ref.get("tool_result_seq") is not None
         }
+        events = self._events_snapshot()
         sources = {
             event["seq"]: event
-            for event in self.events
+            for event in events
             if event.get("kind") == "tool_result"
         }
         true_by_source_seq: dict[int, dict[str, Any]] = {}
-        for event in self.events:
+        for event in events:
             if event.get("kind") != "assertion" or event.get("verdict") != "true":
                 continue
             src = self._assertion_source(event, sources)
@@ -465,7 +545,7 @@ class DshSession:
                 continue
             needs_assert = step_requires_assertion(step)
             matched_ev: Optional[dict[str, Any]] = None
-            for event in self.events:
+            for event in events:
                 if event.get("kind") != "tool_result" or event.get("ok") is not True:
                     continue
                 seq = int(event.get("seq") or 0)
@@ -500,23 +580,28 @@ class DshSession:
         return self.assertions["unknown"]
 
     def record_usage(self, raw: dict[str, Any]) -> dict[str, int]:
-        """累加一次模型调用的 token 用量。"""
+        """累加一次模型调用的 token 用量。非法数值按 0 计，不让用量字段打断会话。"""
         if not isinstance(raw, dict):
             return dict(self.usage)
-        in_tok = int(raw.get("input_tokens") or raw.get("prompt_tokens") or 0)
-        out_tok = int(raw.get("output_tokens") or raw.get("completion_tokens") or 0)
-        cached_tok = int(
+        details = raw.get("prompt_tokens_details") or {}
+        if not isinstance(details, dict):
+            details = {}
+        in_tok = _usage_int(raw.get("input_tokens") or raw.get("prompt_tokens"))
+        out_tok = _usage_int(raw.get("output_tokens") or raw.get("completion_tokens"))
+        cached_tok = _usage_int(
             raw.get("cached_tokens")
             or raw.get("cache_read_input_tokens")
-            or (raw.get("prompt_tokens_details") or {}).get("cached_tokens")
-            or 0
+            or details.get("cached_tokens")
         )
-        total_tok = int(raw.get("total_tokens") or (in_tok + out_tok))
-        self.usage["input_tokens"] += max(0, in_tok)
-        self.usage["output_tokens"] += max(0, out_tok)
-        self.usage["cached_tokens"] += max(0, cached_tok)
-        self.usage["total_tokens"] += max(0, total_tok)
-        return dict(self.usage)
+        total_tok = _usage_int(raw.get("total_tokens"))
+        if total_tok == 0:
+            total_tok = in_tok + out_tok
+        with self._lock:
+            self.usage["input_tokens"] += in_tok
+            self.usage["output_tokens"] += out_tok
+            self.usage["cached_tokens"] += cached_tok
+            self.usage["total_tokens"] += total_tok
+            return dict(self.usage)
 
     def artifact_ready(self) -> bool:
         """检查目标产物是否已落盘且非空。"""
@@ -527,27 +612,40 @@ class DshSession:
         except OSError:
             return False
 
-    def can_continue(self) -> tuple[bool, str]:
-        if self._stop_requested:
-            return False, "人工中止"
-        if self.max_loop_repeat > 0 and self._loop_count >= self.max_loop_repeat:
-            return (
-                False,
-                f"agent-loop: 工具循环空转（{self._loop_signature} 连续重复 {self._loop_count} 次）",
-            )
-        if self.steps_used >= self.max_steps:
-            return False, f"步数预算耗尽（max_steps={self.max_steps}）"
+    def clock_expired_reason(self) -> str:
+        """总时长预算是否已到。暂停和步骤内部用它，不把静默/产物宽限算进人工等待。"""
         now_ts = float(self.now())
-        elapsed = now_ts - self._started_at
-        if elapsed >= self.timeout_s:
-            return False, f"时长预算耗尽（timeout_s={self.timeout_s}）"
-        if self.stall_timeout_s > 0 and (now_ts - self._last_activity_at) >= self.stall_timeout_s:
-            return False, f"stalled: 静默超时（stall_timeout_s={self.stall_timeout_s}）"
-        if self.artifact_path and self.artifact_grace_s > 0 and elapsed >= self.artifact_grace_s:
+        with self._lock:
+            elapsed = now_ts - self._started_at
+            timeout_s = self.timeout_s
+        if elapsed >= timeout_s:
+            return f"时长预算耗尽（timeout_s={timeout_s}）"
+        return ""
+
+    def can_continue(self) -> tuple[bool, str]:
+        now_ts = float(self.now())
+        with self._lock:
+            if self._stop_requested:
+                return False, "人工中止"
+            if self.max_loop_repeat > 0 and self._loop_count >= self.max_loop_repeat:
+                return (
+                    False,
+                    f"agent-loop: 工具循环空转（{self._loop_signature} 连续重复 {self._loop_count} 次）",
+                )
+            if self.steps_used >= self.max_steps:
+                return False, f"步数预算耗尽（max_steps={self.max_steps}）"
+            elapsed = now_ts - self._started_at
+            if elapsed >= self.timeout_s:
+                return False, f"时长预算耗尽（timeout_s={self.timeout_s}）"
+            if self.stall_timeout_s > 0 and (now_ts - self._last_activity_at) >= self.stall_timeout_s:
+                return False, f"stalled: 静默超时（stall_timeout_s={self.stall_timeout_s}）"
+            artifact_path = self.artifact_path
+            artifact_grace_s = self.artifact_grace_s
+        if artifact_path and artifact_grace_s > 0 and elapsed >= artifact_grace_s:
             if not self.artifact_ready():
                 return (
                     False,
-                    f"no-artifact: 产物宽限期超时（{self.artifact_grace_s}s 未产出 {self.artifact_path}）",
+                    f"no-artifact: 产物宽限期超时（{artifact_grace_s}s 未产出 {artifact_path}）",
                 )
         return True, ""
 
@@ -566,13 +664,19 @@ class DshSession:
         content = str(text or "").strip()
         if not content:
             return
-        self._hints.append(content)
+        with self._lock:
+            self._hints.append(content)
         self.append_event("hint", text=content)
 
     def drain_hints(self) -> list[str]:
-        hints = list(self._hints)
-        self._hints.clear()
-        return hints
+        with self._lock:
+            hints = list(self._hints)
+            self._hints.clear()
+            return hints
+
+    def hint_texts(self) -> list[str]:
+        with self._lock:
+            return list(self._hints)
 
     # ------------------------------------------------------------------
     # 暂停/中止闸（harness 每步调用）
@@ -580,10 +684,13 @@ class DshSession:
 
     async def wait_if_paused(self, interval: float = 0.05) -> None:
         while self.state is SessionState.PAUSED:
-            if self._stop_requested:
+            if self.stop_requested():
                 raise SessionStopped("暂停中被中止")
+            reason = self.clock_expired_reason()
+            if reason:
+                raise SessionStopped(reason)
             await asyncio.sleep(interval)
-        if self._stop_requested:
+        if self.stop_requested():
             raise SessionStopped("会话被中止")
 
     # ------------------------------------------------------------------
@@ -592,11 +699,13 @@ class DshSession:
 
     def bind_loop(self, loop: Any) -> None:
         """绑定 harness 所在事件循环，供跨线程 resolve 使用。"""
-        self._loop = loop
+        with self._lock:
+            self._loop = loop
 
     @property
     def pending_approval(self) -> Optional[dict[str, Any]]:
-        return dict(self._approval) if self._approval else None
+        with self._lock:
+            return dict(self._approval) if self._approval else None
 
     async def request_approval(self, *, step: int, tool: str,
                                args: dict[str, Any]) -> ApprovalDecision:
@@ -605,33 +714,46 @@ class DshSession:
             self.append_event("approval", step=step, tool=tool, approved=True,
                               reason=decision.reason)
             return decision
-        self._approval_decision = None
-        self._approval = {"step": step, "tool": tool, "args": dict(args or {})}
-        self._approval_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        self.bind_loop(loop)
+        event = asyncio.Event()
+        # 先挂上 Event 再发布待审批，避免跨线程 resolve 看见请求却唤不醒等待方。
+        with self._lock:
+            self._approval_decision = None
+            self._approval_event = event
+            self._approval = {"step": step, "tool": tool, "args": dict(args or {})}
         self.append_event("approval_request", step=step, tool=tool, args=dict(args or {}))
         timeout = float(self.approval_timeout_s)
         try:
-            await asyncio.wait_for(self._approval_event.wait(), timeout=timeout)
+            await asyncio.wait_for(event.wait(), timeout=timeout)
         except asyncio.TimeoutError:
-            self._approval = None
-            self._approval_event = None
+            with self._lock:
+                decision = self._approval_decision
+                self._approval = None
+                self._approval_event = None
+            if decision is not None:
+                self.append_event("approval", step=step, tool=tool,
+                                  approved=decision.approved, reason=decision.reason)
+                return decision
             self.append_event("approval_timeout", step=step, tool=tool)
             return ApprovalDecision(False, f"审批超时（{timeout:.0f}s）")
-        decision = self._approval_decision or ApprovalDecision(False, "无审批决定")
-        self._approval = None
-        self._approval_event = None
+        with self._lock:
+            decision = self._approval_decision or ApprovalDecision(False, "无审批决定")
+            self._approval = None
+            self._approval_event = None
         self.append_event("approval", step=step, tool=tool,
                           approved=decision.approved, reason=decision.reason)
         return decision
 
     def resolve_approval(self, approved: bool, reason: str = "") -> bool:
-        if self._approval is None:
-            return False
-        self._approval_decision = ApprovalDecision(bool(approved), str(reason or ""))
-        event = self._approval_event
+        with self._lock:
+            if self._approval is None:
+                return False
+            self._approval_decision = ApprovalDecision(bool(approved), str(reason or ""))
+            event = self._approval_event
+            loop = self._loop
         if event is None:
             return True
-        loop = self._loop
         try:
             running = asyncio.get_running_loop()
         except RuntimeError:
@@ -650,14 +772,16 @@ class DshSession:
 
     def set_conclusion(self, state: SessionState, summary: str,
                        **extra: Any) -> dict[str, Any]:
-        self.conclusion = {
+        conclusion = {
             "state": SessionState(state).value,
             "summary": summary,
             "unknown_count": self.unknown_count(),
             **extra,
         }
-        self.append_event("conclusion", **self.conclusion)
-        return self.conclusion
+        with self._lock:
+            self.conclusion = conclusion
+        self.append_event("conclusion", **conclusion)
+        return conclusion
 
     def to_ir(self, *, name: str = "", os_name: str = "",
               persist: bool = True) -> Any:
@@ -677,6 +801,10 @@ class DshSession:
         return ir
 
     def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return self._snapshot_unlocked()
+
+    def _snapshot_unlocked(self) -> dict[str, Any]:
         return {
             "session_id": self.session_id,
             "goal": self.goal,

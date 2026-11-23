@@ -1,12 +1,15 @@
 """DSH 工具注册表：注册/校验/Schema 派生。"""
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from uita.tools.dsh.registry import (TIER_ACTION, TIER_READ, ArtifactRef,
-                                     DshTool, DshToolError, ToolResult,
-                                     build_mcp_tools, build_tool_specs,
-                                     get_tool, register_dsh_tool, tool_names)
+                                     DshTool, DshToolAbort, DshToolError,
+                                     ToolResult, bound_timeout, build_mcp_tools,
+                                     build_tool_specs, get_tool, register_dsh_tool,
+                                     tool_names)
 
 
 class _Echo(DshTool):
@@ -111,6 +114,54 @@ async def test_invoke_wraps_tool_exception(registry):
     result = await get_tool("boom").invoke(None, {})
     assert not result.ok
     assert "RuntimeError" in result.error
+
+
+class _Hang(DshTool):
+    name = "hang"
+    tier = TIER_READ
+    timeout_s = 0.05
+    params = {}
+
+    async def run(self, ctx) -> ToolResult:
+        await asyncio.sleep(5)
+        return ToolResult(ok=True, data={"done": True})
+
+
+class _Abort(DshTool):
+    name = "abort"
+    tier = TIER_READ
+    timeout_s = 5
+    params = {}
+
+    async def run(self, ctx) -> ToolResult:
+        raise DshToolAbort("环境不可继续")
+
+
+async def test_invoke_times_out(registry):
+    register_dsh_tool(_Hang)
+    result = await get_tool("hang").invoke(None, {})
+    assert not result.ok
+    assert "执行超时" in result.error
+    assert result.took_ms < 2000
+
+
+async def test_invoke_propagates_abort(registry):
+    register_dsh_tool(_Abort)
+    with pytest.raises(DshToolAbort):
+        await get_tool("abort").invoke(None, {})
+
+
+async def test_invoke_does_not_start_when_budget_spent(registry, make_session):
+    register_dsh_tool(_Hang)
+    clock = {"now": 1000.0}
+    session = make_session(timeout_s=1, now=lambda: clock["now"])
+    clock["now"] = 1005.0
+    tool = get_tool("hang")
+    started = asyncio.get_running_loop().time()
+    result = await tool.invoke(None, {}, timeout_s=bound_timeout(tool, session))
+    assert asyncio.get_running_loop().time() - started < 0.5
+    assert not result.ok
+    assert "预算已耗尽" in result.error
 
 
 async def test_invoke_rejects_non_object_args(registry):

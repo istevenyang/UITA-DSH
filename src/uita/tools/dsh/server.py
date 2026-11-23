@@ -57,6 +57,19 @@ def _json_response(status: int, payload: Any) -> Response:
     return Response(status, json.dumps(payload, ensure_ascii=False).encode("utf-8"))
 
 
+def _optional_positive_int(value: Any, default: int, name: str) -> int:
+    """解析可选正整数。空或 0 沿用默认值；非法或负数直接拒绝。"""
+    if value in (None, "", 0, "0"):
+        return int(default)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} 必须是整数") from exc
+    if parsed < 0:
+        raise ValueError(f"{name} 不能为负数")
+    return parsed or int(default)
+
+
 class DshServer:
     """本地引擎网关。"""
 
@@ -131,6 +144,8 @@ class DshServer:
         for session in list(self.sessions.values()):
             if not session.is_terminal():
                 session.request_stop()
+        for thread in list(self._threads.values()):
+            thread.join(timeout=2.0)
         if self._httpd is not None:
             try:
                 self._httpd.server_close()
@@ -320,6 +335,15 @@ class DshServer:
         if not goal:
             return _json_response(400, {"ok": False,
                                        "error": "goal / test_case / ir 至少提供一个"})
+        try:
+            max_steps = _optional_positive_int(
+                payload.get("max_steps"), self.max_steps, "max_steps",
+            )
+            timeout_s = _optional_positive_int(
+                payload.get("timeout_s"), self.timeout_s, "timeout_s",
+            )
+        except ValueError as exc:
+            return _json_response(400, {"ok": False, "error": str(exc)})
         with self._lock:
             # IDLE 也算占用：线程刚起、尚未进入 PREPARING 时同样不能并发起新会话
             busy = [
@@ -339,8 +363,8 @@ class DshServer:
                 app_name=str(payload.get("app") or "").strip()
                 or (ir_obj.meta.app if ir_obj is not None else "") or self.default_app,
                 mode=mode,
-                max_steps=int(payload.get("max_steps") or self.max_steps),
-                timeout_s=int(payload.get("timeout_s") or self.timeout_s),
+                max_steps=max_steps,
+                timeout_s=timeout_s,
                 approval_timeout_s=self.approval_timeout_s,
                 auto_approve=self.auto_approve or mode is Mode.AUTO,
                 case=case_obj,
@@ -364,41 +388,52 @@ class DshServer:
         return _json_response(200, {"ok": True, "session": session.snapshot()})
 
     def _run_session(self, session: DshSession, ctx: ToolContext) -> None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        session.bind_loop(loop)
-        try:
-            loop.run_until_complete(run_goal(session, ctx, self._planner_factory()))
+        def _body(loop: asyncio.AbstractEventLoop) -> None:
+            planner = self._planner_factory()
+            loop.run_until_complete(run_goal(session, ctx, planner))
             session.to_ir(persist=True)
-        except Exception as exc:  # noqa: BLE001 - 线程内异常必须留痕
-            logger.warning("dsh: 会话线程异常 %s: %s", session.session_id, exc, exc_info=True)
-            try:
-                session.set_conclusion(SessionState.ERROR, f"{type(exc).__name__}: {exc}")
-            except Exception:  # noqa: BLE001
-                pass
-        finally:
-            self._threads.pop(session.session_id, None)
-            try:
-                loop.close()
-            except Exception:  # noqa: BLE001
-                pass
+
+        self._run_on_thread(session, ctx, _body, "会话")
 
     def _run_ir_session(self, session: DshSession, ctx: ToolContext,
                         ir: IR) -> None:
         """线程体：按 IR 执行（零 LLM）。"""
+
+        def _body(loop: asyncio.AbstractEventLoop) -> None:
+            loop.run_until_complete(run_ir(session, ctx, ir))
+
+        self._run_on_thread(session, ctx, _body, "IR 会话")
+
+    def _run_on_thread(self, session: DshSession, ctx: ToolContext,
+                       body: Callable[[asyncio.AbstractEventLoop], None],
+                       label: str) -> None:
+        """跑会话线程，并保证离开时会话处于终态、引擎已回收。"""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         session.bind_loop(loop)
         try:
-            loop.run_until_complete(run_ir(session, ctx, ir))
-        except Exception as exc:  # noqa: BLE001 - 线程内异常必须留痕
-            logger.warning("dsh: IR 会话线程异常 %s: %s", session.session_id, exc,
+            body(loop)
+        except Exception as exc:  # noqa: BLE001 - 线程内异常必须留痕且释放引擎占用
+            logger.warning("dsh: %s线程异常 %s: %s", label, session.session_id, exc,
                            exc_info=True)
-            try:
-                session.set_conclusion(SessionState.ERROR, f"{type(exc).__name__}: {exc}")
-            except Exception:  # noqa: BLE001
-                pass
+            if not session.is_terminal():
+                try:
+                    session.ensure_terminal(
+                        SessionState.ERROR, f"{type(exc).__name__}: {exc}",
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.warning("dsh: 无法把会话 %s 收成终态", session.session_id,
+                                   exc_info=True)
         finally:
+            if not session.is_terminal():
+                try:
+                    session.ensure_terminal(SessionState.ERROR, f"{label}线程退出但未进入终态")
+                except Exception:  # noqa: BLE001
+                    logger.warning("dsh: 会话 %s 停在非终态", session.session_id, exc_info=True)
+            try:
+                loop.run_until_complete(ctx.cleanup_engine())
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("dsh: 引擎回收失败 %s: %s", session.session_id, exc)
             self._threads.pop(session.session_id, None)
             try:
                 loop.close()
@@ -467,12 +502,21 @@ class DshServer:
                 mode = Mode.parse(payload.get("mode"), session.mode)
             except Exception:  # noqa: BLE001
                 mode = session.mode
+            try:
+                max_steps = _optional_positive_int(
+                    payload.get("max_steps"), self.max_steps, "max_steps",
+                )
+                timeout_s = _optional_positive_int(
+                    payload.get("timeout_s"), self.timeout_s, "timeout_s",
+                )
+            except ValueError as exc:
+                return _json_response(400, {"ok": False, "error": str(exc)})
             replay = DshSession(
                 goal=ir_copy.meta.name,
                 app_name=ir_copy.meta.app or session.app_name or self.default_app,
                 mode=mode,
-                max_steps=int(payload.get("max_steps") or self.max_steps),
-                timeout_s=int(payload.get("timeout_s") or self.timeout_s),
+                max_steps=max_steps,
+                timeout_s=timeout_s,
                 approval_timeout_s=self.approval_timeout_s,
                 auto_approve=self.auto_approve or mode is Mode.AUTO,
                 case=ir_copy.to_text_case(),
@@ -684,7 +728,15 @@ def _make_handler(dsh: DshServer) -> type[BaseHTTPRequestHandler]:
                 length = 0
             body = self.rfile.read(length) if length > 0 else b""
             headers = {key: value for key, value in self.headers.items()}
-            response = dsh.handle(method, self.path, query, body, headers)
+            try:
+                response = dsh.handle(method, self.path, query, body, headers)
+            except Exception as exc:  # noqa: BLE001 - 请求处理失败必须返回，不能挂死连接
+                logger.warning("dsh-http: %s %s 失败: %s", method, self.path, exc,
+                               exc_info=True)
+                payload = json.dumps(
+                    {"ok": False, "error": "内部错误"}, ensure_ascii=False,
+                ).encode("utf-8")
+                response = Response(500, payload)
             self.send_response(response.status)
             self.send_header("Content-Type", response.content_type)
             self.send_header("Content-Length", str(len(response.body)))

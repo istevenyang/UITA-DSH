@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 from .harness import _finish  # 同一包内复用终态收敛逻辑（含快照落盘）
 from .policy import PolicyGate
-from .registry import all_tools, get_tool, load_builtin_tools
+from .registry import all_tools, bound_timeout, get_tool, load_builtin_tools
 from .session import DshSession, SessionState, SessionStopped
 from .textcase import STEP_FAILED, STEP_PASSED, STEP_UNKNOWN
 
@@ -58,7 +58,7 @@ async def _invoke(session: DshSession, ctx: Any, gate: PolicyGate,
         )
         if not approval.approved:
             return _Denied(f"人工未批准 {name}: {approval.reason}")
-    result = await tool.invoke(ctx, args)
+    result = await tool.invoke(ctx, args, timeout_s=bound_timeout(tool, session))
     session.append_event(
         "tool_result", tool=name, args=_short(args), ok=result.ok,
         error=_short(result.error), data=_short(result.data), took_ms=result.took_ms,
@@ -115,9 +115,14 @@ async def _wait_for(ctx: Any, gate: PolicyGate, session: DshSession,
                     step: Any) -> _StepResult:
     """``wait`` 步骤：轮询 locate 直到命中或超时（不截图，零视觉）。"""
     timeout = float(step.args.get("timeout") or _DEFAULT_WAIT_TIMEOUT)
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + max(0.0, timeout)
     last = ""
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
+        if session.stop_requested():
+            return _StepResult(STEP_FAILED, "会话被中止")
+        expired = session.clock_expired_reason()
+        if expired:
+            return _StepResult(STEP_FAILED, expired)
         result = await _invoke(session, ctx, gate, "locate", _tool_args(step))
         if isinstance(result, _Denied):
             return _StepResult(STEP_FAILED, result.reason)
@@ -129,7 +134,12 @@ async def _wait_for(ctx: Any, gate: PolicyGate, session: DshSession,
                 [ref.to_dict() for ref in result.evidence],
             )
         last = getattr(result, "error", "") or last
-        await asyncio.sleep(_POLL_INTERVAL)
+        if session.stop_requested():
+            return _StepResult(STEP_FAILED, "会话被中止")
+        expired = session.clock_expired_reason()
+        if expired:
+            return _StepResult(STEP_FAILED, expired)
+        await asyncio.sleep(min(_POLL_INTERVAL, max(0.0, deadline - time.monotonic())))
     return _StepResult(STEP_FAILED, f"等待超时 {timeout}s：{last or '未命中'}")
 
 

@@ -181,6 +181,28 @@ async def test_wait_step_uses_locate(tmp_path, registry):
 
 
 @pytest.mark.asyncio
+async def test_wait_stops_when_session_clock_expires(tmp_path, registry):
+    clock = {"now": 1000.0}
+    calls: list[str] = []
+
+    def locate(kwargs):
+        calls.append(kwargs.get("target", ""))
+        clock["now"] += 10
+        return ToolResult.fail("未定位到元素")
+
+    _install(registry, {"locate": (TIER_READ, locate)})
+    session = _session(tmp_path, timeout_s=5, now=lambda: clock["now"])
+    ir = _ir([{"no": 1, "action": "wait",
+               "target": {"kind": "element", "name": "首页"},
+               "args": {"timeout": 30}}])
+    conclusion = await executor_mod.run_ir(session, _ctx(session), ir)
+
+    assert calls == ["首页"]
+    assert conclusion["state"] == "failed"
+    assert "时长预算" in conclusion["summary"]
+
+
+@pytest.mark.asyncio
 async def test_wait_step_timeout(tmp_path, registry):
     _install(registry, {"locate": (TIER_READ, _fail("未定位到元素"))})
     session = _session(tmp_path)

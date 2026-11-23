@@ -125,6 +125,68 @@ def test_resolve_approval_without_pending_returns_false(make_session):
     assert session.resolve_approval(True) is False
 
 
+def test_record_usage_ignores_garbage(make_session):
+    session = make_session()
+    session.record_usage({
+        "prompt_tokens": "nope",
+        "completion_tokens": None,
+        "prompt_tokens_details": "not-a-dict",
+        "total_tokens": "12",
+    })
+    session.record_usage({"input_tokens": -4, "output_tokens": 3})
+    assert session.usage["input_tokens"] == 0
+    assert session.usage["output_tokens"] == 3
+    assert session.usage["cached_tokens"] == 0
+    assert session.usage["total_tokens"] == 15
+
+
+def test_ensure_terminal_from_idle(make_session):
+    session = make_session()
+    conclusion = session.ensure_terminal(SessionState.ERROR, "planner 构造失败")
+    assert session.is_terminal()
+    assert session.state is SessionState.ERROR
+    assert conclusion["state"] == "error"
+    assert "planner" in conclusion["summary"]
+    again = session.ensure_terminal(SessionState.FAILED, "不要覆盖")
+    assert again["summary"] == conclusion["summary"]
+
+
+async def test_wait_if_paused_honors_clock(make_session):
+    clock = {"now": 1000.0}
+    session = make_session(timeout_s=10, now=lambda: clock["now"])
+    session.transition(SessionState.PREPARING)
+    session.transition(SessionState.RUNNING)
+    session.pause()
+    clock["now"] += 11
+    with pytest.raises(SessionStopped, match="时长预算"):
+        await session.wait_if_paused(interval=0.001)
+
+
+async def test_resolve_approval_from_other_thread(make_session):
+    import threading
+
+    session = make_session(approval_timeout_s=2)
+    task = asyncio.ensure_future(
+        session.request_approval(step=1, tool="act_click", args={"target": "设置"})
+    )
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+        if session.pending_approval:
+            break
+    holder: dict = {}
+
+    def _resolve() -> None:
+        holder["ok"] = session.resolve_approval(True, "跨线程批准")
+
+    thread = threading.Thread(target=_resolve)
+    thread.start()
+    thread.join(timeout=2)
+    decision = await task
+    assert holder["ok"] is True
+    assert decision.approved is True
+    assert decision.reason == "跨线程批准"
+
+
 async def test_wait_if_paused_raises_on_stop(make_session):
     session = make_session()
     session.transition(SessionState.PREPARING)

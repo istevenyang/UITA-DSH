@@ -371,7 +371,7 @@ def _compact_events(events: list[dict[str, Any]], limit: int) -> list[str]:
     for event in events[-limit:]:
         kind = event.get("kind", "?")
         detail = {k: v for k, v in event.items() if k not in {"seq", "ts", "kind"}}
-        text = json.dumps(detail, ensure_ascii=False)
+        text = json.dumps(detail, ensure_ascii=False, default=str)
         if len(text) > 400:
             text = text[:400] + "…"
         lines.append(f"#{event.get('seq')} {kind} {text}")
@@ -408,12 +408,12 @@ class DshPlanner:
                 list(getattr(session, "events", []) or []), self.history_limit,
             ),
             "last_observation": observation or {},
-            "hints": list(getattr(session, "_hints", []) or [])[-8:],
+            "hints": _hint_texts(session)[-8:],
         }
         content = (
             self.system_prompt
             + "\n\n当前上下文（JSON）：\n"
-            + json.dumps(payload, ensure_ascii=False)
+            + json.dumps(payload, ensure_ascii=False, default=str)
             + "\n\n只输出 JSON 计划。"
         )
         return [{"role": "user", "content": content}]
@@ -438,6 +438,16 @@ class DshPlanner:
             if callable(record_fn):
                 record_fn(payload["usage"])
         return plan_from_completion(payload)
+
+
+def _hint_texts(session: Any) -> list[str]:
+    reader = getattr(session, "hint_texts", None)
+    if callable(reader):
+        try:
+            return [str(item) for item in reader()]
+        except Exception:  # noqa: BLE001 - 提示只是上下文，读失败按空处理
+            return []
+    return [str(item) for item in list(getattr(session, "_hints", []) or [])]
 
 
 def _case_payload(session: Any) -> Optional[dict[str, Any]]:

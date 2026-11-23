@@ -23,13 +23,13 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from .context import ToolContext
-from .harness import run_goal
+from .harness import _finish, run_goal
 from .ir import save_ir
 from .planner import (DshPlanner, HttpChatClient, resolve_api_key,
                       resolve_llm_url, resolve_model)
 from .policy import Mode
 from .registry import all_tools, load_builtin_tools
-from .session import DshSession
+from .session import DshSession, SessionState
 from .textcase import TextCase, parse_text_case
 
 logger = logging.getLogger("uita.dsh")
@@ -322,9 +322,32 @@ async def run_headless_async(
     ir_saved_path = ""
     tcs_saved_path = ""
     promoted_path = ""
+    conclusion: dict[str, Any] = {}
     try:
-        conclusion = await run_goal(session, ctx, planner, tools=tools)
-        ir_obj = session.to_ir(persist=True)
+        try:
+            conclusion = await run_goal(session, ctx, planner, tools=tools)
+        except asyncio.CancelledError:
+            if not session.is_terminal():
+                _finish(session, SessionState.ABORTED, "任务被取消")
+            raise
+        except Exception as exc:  # noqa: BLE001 - 无头必须返回结构化结果，不能把异常抛给 CLI
+            logger.warning("dsh: 无头会话异常: %s", exc, exc_info=True)
+            if session.is_terminal():
+                conclusion = dict(session.conclusion)
+            else:
+                conclusion = _finish(
+                    session, SessionState.ERROR, f"{type(exc).__name__}: {exc}",
+                )
+        if not conclusion:
+            conclusion = dict(session.conclusion) or {
+                "state": session.state.value,
+                "summary": "会话未产生结论",
+            }
+        try:
+            ir_obj = session.to_ir(persist=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("dsh: plan.ir.json 构建失败: %s", exc)
+            ir_obj = getattr(session, "ir", None)
         if ir_obj is not None and session.store is not None:
             ir_saved_path = os.path.join(session.store.session_dir, "plan.ir.json")
         if ir_save and ir_obj is not None:
@@ -357,7 +380,10 @@ async def run_headless_async(
         if hb_thread is not None:
             hb_thread.join(timeout=1.0)
         if not keep_app:
-            await ctx.cleanup_engine()
+            try:
+                await ctx.cleanup_engine()
+            except Exception as exc:  # noqa: BLE001 - 回收失败不盖住会话结论
+                logger.warning("dsh: 无头引擎回收失败: %s", exc)
 
     elapsed_s = time.monotonic() - started
     envelope = build_result_envelope(session, conclusion, elapsed_s)

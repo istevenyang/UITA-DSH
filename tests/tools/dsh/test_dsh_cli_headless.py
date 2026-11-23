@@ -194,6 +194,46 @@ def test_session_records_token_usage():
     }
 
 
+def test_headless_returns_result_when_goal_crashes(monkeypatch, tmp_path):
+    _tools(monkeypatch)
+
+    async def boom(*_args, **_kwargs):
+        raise RuntimeError("planner host down")
+
+    monkeypatch.setattr(headless_mod, "run_goal", boom)
+    result = run_headless(
+        goal="规划器炸了",
+        root=str(tmp_path),
+        heartbeat_s=0,
+        stream_sink=lambda _: None,
+    )
+    assert result.returncode == 1
+    assert result.state == "error"
+    assert "planner host down" in result.error_detail
+
+
+def test_headless_keeps_passed_when_ir_persist_fails(monkeypatch, tmp_path):
+    tools = _tools(monkeypatch)
+
+    def boom(self, **_kwargs):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr("uita.tools.dsh.session.DshSession.to_ir", boom)
+    planner = FakePlanner([
+        {"tool": "task_finish", "args": {"status": "passed", "summary": "ok"}},
+    ])
+    result = run_headless(
+        goal="落盘失败仍要结论",
+        root=str(tmp_path),
+        planner=planner,
+        tools=tools,
+        heartbeat_s=0,
+        stream_sink=lambda _: None,
+    )
+    assert result.returncode == 0
+    assert result.state == "passed"
+
+
 def test_cleanup_engine_called_on_exit(monkeypatch, tmp_path):
     tools = _tools(monkeypatch)
     evicted: list[tuple[str, str]] = []
